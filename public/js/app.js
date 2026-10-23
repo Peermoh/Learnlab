@@ -83,7 +83,7 @@ function nextUp() {
 
 function lessonHref(item) {
   const t = trackOf(item.trackId);
-  return `#/learn/${t.id}/${t.items.findIndex((x) => x.id === item.id)}`;
+  return `#/track/${t.id}/${t.items.findIndex((x) => x.id === item.id)}`;
 }
 
 function renderHome() {
@@ -147,125 +147,88 @@ function renderTrack(id) {
     ${topbar(back('#/', t.title, `${t.hi} · ${p.mastered}/${p.total} mastered`))}
     ${groups.map((g) => `<section class="group"><h3>${esc(g)}</h3><div class="tiles">
       ${t.items.map((it, idx) => it.group !== g ? '' : `
-        <a class="tile l${getLevel(it.id)}" href="#/learn/${t.id}/${idx}" aria-label="${esc(it.roman)}">
+        <a class="tile l${getLevel(it.id)}" href="#/track/${t.id}/${idx}" aria-label="${esc(it.roman)}">
           <span class="dot"></span><span class="ch">${it.ch}</span><span class="rm">${esc(it.roman)}</span></a>`).join('')}
     </div></section>`).join('')}
   </div>`;
 }
 
-// ---------- Lesson (see · hear · say) ----------
+// ---------- Letter sheet (tap a letter, everything is right there) ----------
 
-let lesson = null;
-const STEPS = ['See', 'Hear', 'Say'];
+let sheet = null; // { t, idx, state, result, error, clip }
+const $sheet = document.createElement('div');
+document.body.appendChild($sheet);
 
-function renderLesson(trackId, idx) {
-  const t = trackOf(trackId);
-  const item = t && t.items[idx];
-  if (!item) return renderHome();
-  const key = `${trackId}/${idx}`;
-  if (!lesson || lesson.key !== key) lesson = { key, t, item, idx, step: 0, state: 'idle', result: null, clip: null };
-  lesson.t = t; lesson.item = item; lesson.idx = idx;
-  draw();
-}
+const MIC_ERRORS = {
+  'not-allowed': 'The microphone is blocked. Tap the icon at the left of the address bar, allow Microphone, then try again.',
+  'service-not-allowed': 'The microphone is blocked. Tap the icon at the left of the address bar, allow Microphone, then try again.',
+  'no-speech': 'I didn’t hear anything. Try again a little closer and louder.',
+  'audio-capture': 'No microphone was found on this device.',
+  network: 'The speech service couldn’t be reached. Check your internet connection.',
+  'language-not-supported': 'Hindi voice recognition isn’t available in this browser.',
+  aborted: '',
+};
 
-function draw() {
-  const { t, item, idx, step } = lesson;
-  const prev = idx > 0 ? `#/learn/${t.id}/${idx - 1}` : null;
-  const next = idx < t.items.length - 1 ? `#/learn/${t.id}/${idx + 1}` : `#/track/${t.id}`;
-  let body = '';
-  if (step === 0) body = seeStep();
-  else if (step === 1) body = hearStep();
-  else body = sayStep();
-
-  $app.innerHTML = `<div class="view">
-    ${topbar(back(`#/track/${t.id}`, t.title, `${idx + 1} of ${t.items.length}`))}
-    <div class="stepper" aria-label="Steps">
-      ${STEPS.map((s, i) => `<div class="s ${i < step ? 'done' : i === step ? 'cur' : ''}"><i></i>${s}</div>`).join('')}
-    </div>
-    ${body}
-    <div class="footer-nav">
-      ${prev ? `<a class="btn ghost" href="${prev}">${ICON.back} Previous</a>` : '<span></span>'}
-      ${step === 2 ? `<a class="btn soft" href="${next}">${idx < t.items.length - 1 ? 'Next letter' : 'Finish'} ${ICON.next}</a>` : '<span></span>'}
-    </div>
-  </div>`;
-}
-
-const sentence = (item) => `Sounds like ${item.sound}`;
-
-function seeStep() {
-  const { item } = lesson;
-  return `<div class="stack">
-    <section class="card letter-card">
-      <div class="big">${item.ch}</div>
-      <div class="roman">${esc(item.roman)}</div>
-      <div class="sound">${esc(sentence(item))}</div>
-    </section>
-    <div class="tip"><span class="em">💡</span><div><b>How to say it.</b> ${esc(item.tip)}</div></div>
-    <div class="wordcard">
-      <div><div class="hi">${item.word.hi}</div><div class="rm">${esc(item.word.roman)}</div><div class="en">${esc(item.word.en)}</div></div>
-      <div class="muted" style="font-size:13px;text-align:right">Example<br/>word</div>
-    </div>
-    <div class="actions"><button class="btn primary" data-act="step" data-to="1">Hear it ${ICON.next}</button></div>
-  </div>`;
-}
-
-function hearStep() {
-  const { item } = lesson;
-  return `<div class="stack">
-    <section class="card letter-card">
-      <div class="big sm">${item.ch}</div>
-      <div class="roman">${esc(item.roman)}</div>
-    </section>
-    <div class="actions" style="margin-top:0">
-      <button class="play" data-act="say" data-text="${esc(item.ch)}" data-rate="0.85"><span class="pi">${ICON.play}</span>Letter</button>
-      <button class="play" data-act="say" data-text="${esc(item.ch)}" data-rate="0.45"><span class="pi">${ICON.play}</span>Slow</button>
-      <button class="play accent" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8"><span class="pi">${ICON.play}</span>${item.word.hi}</button>
-    </div>
-    <div class="tip"><span class="em">👂</span><div>Listen two or three times. Say it quietly to yourself as you listen. <b>${esc(item.tip)}</b></div></div>
-    ${voiceNote()}
-    <div class="actions"><button class="btn primary" data-act="step" data-to="2">Now you say it ${ICON.next}</button></div>
-  </div>`;
-}
-
-function sayStep() {
-  const { item, state, result } = lesson;
+function drawSheet() {
+  const { t, idx, state, result, error } = sheet;
+  const item = t.items[idx];
   const rec = canRecognize;
-  const mic = `<div class="mic-wrap"><button class="mic ${state === 'listening' ? 'live' : ''}" data-act="${rec ? 'listen' : 'record'}" aria-label="${state === 'listening' ? 'Stop' : 'Start speaking'}">${state === 'listening' ? ICON.stop : ICON.mic}</button></div>
-    <p class="mic-hint">${state === 'listening' ? (rec ? 'Listening… say the word' : 'Recording…') : result ? 'Tap to try again' : rec ? 'Tap and say the word above' : 'Tap, say the word, then compare'}</p>`;
+  const go = (i) => `#/${sheet.base}/${t.id}/${i}`;
 
-  let out = '';
-  if (rec && result) {
+  let feedback = '';
+  if (result) {
     const v = verdict(result.score);
-    const copy = {
-      great: ['🎉', 'Great, that sounded right!'],
-      almost: ['👍', 'Almost there'],
-      retry: ['🔁', 'Let’s try that again'],
-    }[v];
-    out = `<section class="result ${v}">
-      <div class="emoji">${copy[0]}</div><h3>${copy[1]}</h3>
+    const copy = { great: ['🎉', 'Great, that sounded right!'], almost: ['👍', 'Almost there'], retry: ['🔁', 'Let’s try that again'] }[v];
+    feedback = `<section class="result ${v}"><div class="emoji">${copy[0]}</div><h3>${copy[1]}</h3>
       <div class="meter"><i style="width:${Math.max(6, Math.round(result.score * 100))}%"></i></div>
       <div class="heard">I heard: <b>${esc(result.heard || '—')}</b></div>
-      ${v !== 'great' ? `<p class="muted" style="margin-top:10px;font-size:14px"><b>Tip:</b> ${esc(item.tip)}</p>` : ''}
-    </section>`;
-  } else if (rec && result === false) {
-    out = `<p class="note">I couldn’t hear anything. Check that the browser has permission to use your microphone, then try again.</p>`;
+      ${v !== 'great' ? `<p class="muted" style="margin-top:10px;font-size:14px"><b>Tip:</b> ${esc(item.tip)}</p>` : ''}</section>`;
+  } else if (error) {
+    feedback = `<p class="note">${esc(error)}</p>`;
   } else if (!rec) {
-    out = `<p class="note">Voice checking isn’t supported in this browser (try Chrome or Edge). You can still record yourself and compare it with the native voice.</p>
-      ${lesson.clip ? `<div class="compare"><div class="actions" style="margin:0">
-          <button class="play" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8"><span class="pi">${ICON.play}</span>Native</button>
-          <button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>You</button></div>
-        <p class="muted" style="font-size:14px">How close was it?</p>
-        <div class="rate"><button class="btn soft" data-act="rate" data-v="3">Nailed it</button><button class="btn soft" data-act="rate" data-v="2">Almost</button></div></div>` : ''}`;
+    feedback = `<p class="note">Voice checking isn’t supported in this browser (try Chrome or Edge). Record yourself and compare with the native voice instead.</p>`;
   }
 
-  return `<div class="stack">
-    <div class="wordcard">
-      <div><div class="hi">${item.word.hi}</div><div class="rm">${esc(item.word.roman)}</div><div class="en">${esc(item.word.en)}</div></div>
-      <button class="play" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8" aria-label="Hear the word"><span class="pi">${ICON.play}</span>Hear</button>
+  const micLabel = state === 'listening' ? (rec ? 'Listening… say the word' : 'Recording…') : rec ? 'Tap and say the word' : 'Tap to record yourself';
+
+  $sheet.innerHTML = `<div class="scrim" data-act="close"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(item.roman)}">
+    <div class="grab"></div>
+    <div class="sheet-top">
+      <button class="iconbtn" data-act="sheet-go" data-to="${idx - 1}" aria-label="Previous letter" ${idx === 0 ? 'disabled' : ''}>${ICON.back}</button>
+      <span class="muted" style="font-weight:700;font-size:14px">${t.title} · ${idx + 1} of ${t.items.length}</span>
+      <button class="iconbtn" data-act="sheet-go" data-to="${idx + 1}" aria-label="Next letter" ${idx === t.items.length - 1 ? 'disabled' : ''}>${ICON.next}</button>
     </div>
-    ${mic}
-    ${out}
-  </div>`;
+    <div class="sheet-body">
+      <div class="sheet-letter">
+        <div class="big">${item.ch}</div>
+        <div class="roman">${esc(item.roman)}</div>
+        <div class="sound">Sounds like ${esc(item.sound)}</div>
+      </div>
+
+      <div class="actions" style="margin-top:6px">
+        <button class="play" data-act="say" data-text="${esc(item.ch)}" data-rate="0.85"><span class="pi">${ICON.play}</span>Hear</button>
+        <button class="play" data-act="say" data-text="${esc(item.ch)}" data-rate="0.45"><span class="pi">${ICON.play}</span>Slow</button>
+      </div>
+
+      <div class="tip" style="margin-top:16px"><span class="em">💡</span><div>${esc(item.tip)}</div></div>
+
+      <div class="wordcard" style="margin-top:12px">
+        <div><div class="hi">${item.word.hi}</div><div class="rm">${esc(item.word.roman)}</div><div class="en">${esc(item.word.en)}</div></div>
+        <button class="play accent" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8" aria-label="Hear the word"><span class="pi">${ICON.play}</span>Hear</button>
+      </div>
+
+      <div class="say-box">
+        <div class="mic-wrap"><button class="mic small ${state === 'listening' ? 'live' : ''}" data-act="${rec ? 'listen' : 'record'}" aria-label="${state === 'listening' ? 'Stop' : 'Say it'}">${state === 'listening' ? ICON.stop : ICON.mic}</button></div>
+        <p class="mic-hint">${micLabel}</p>
+        ${feedback}
+        ${!rec && sheet.clip ? `<div class="actions"><button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>Play yours</button>
+          <button class="btn soft" data-act="rate" data-v="3">Nailed it</button><button class="btn soft" data-act="rate" data-v="2">Almost</button></div>` : ''}
+      </div>
+    </div>
+  </section>`;
+  document.body.style.overflow = 'hidden';
+  if (result || error) $sheet.querySelector('.say-box').scrollIntoView({ block: 'end', behavior: 'smooth' });
 }
 
 function mastered(item, level) {
@@ -277,34 +240,38 @@ function mastered(item, level) {
 }
 
 async function onListen() {
-  if (lesson.state === 'listening') return stopListening();
-  lesson.state = 'listening';
-  lesson.result = null;
-  draw();
+  if (sheet.state === 'listening') return stopListening();
+  const item = sheet.t.items[sheet.idx];
+  sheet.state = 'listening';
+  sheet.result = null;
+  sheet.error = '';
+  drawSheet();
+  const mine = sheet;
   try {
     const alts = await listen();
-    lesson.result = scoreWord(lesson.item.word.hi, alts);
-    const v = verdict(lesson.result.score);
-    mastered(lesson.item, v === 'great' ? 3 : v === 'almost' ? 2 : 1);
-  } catch {
-    lesson.result = false;
+    mine.result = scoreWord(item.word.hi, alts);
+    const v = verdict(mine.result.score);
+    mastered(item, v === 'great' ? 3 : v === 'almost' ? 2 : 1);
+  } catch (e) {
+    mine.error = e.message in MIC_ERRORS ? MIC_ERRORS[e.message] : `Something went wrong (${e.message}).`;
   }
-  lesson.state = 'idle';
-  draw();
+  mine.state = 'idle';
+  if (sheet === mine) drawSheet();
 }
 
 async function onRecord() {
-  if (lesson.state === 'listening') return;
-  lesson.state = 'listening';
-  draw();
+  if (sheet.state === 'listening') return;
+  const mine = sheet;
+  mine.state = 'listening';
+  drawSheet();
   try {
-    lesson.clip = await recordClip();
-    raiseLevel(lesson.item.id, 1);
+    mine.clip = await recordClip();
+    raiseLevel(mine.t.items[mine.idx].id, 1);
   } catch {
-    toast('Microphone not available');
+    mine.error = MIC_ERRORS['not-allowed'];
   }
-  lesson.state = 'idle';
-  draw();
+  mine.state = 'idle';
+  if (sheet === mine) drawSheet();
 }
 
 // ---------- Mastery map ----------
@@ -314,7 +281,7 @@ function renderMap() {
     ${topbar(back('#/', 'Mastery map', 'Every sound at a glance'))}
     <div class="legend"><span>New</span><span class="a">Seen</span><span class="b">Practised</span><span class="c">Mastered</span></div>
     ${TRACKS.map((t) => `<section class="group"><h3>${t.title} · ${t.hi}</h3><div class="tiles">
-      ${t.items.map((it, idx) => `<a class="tile l${getLevel(it.id)}" href="#/learn/${t.id}/${idx}" aria-label="${esc(it.roman)}">
+      ${t.items.map((it, idx) => `<a class="tile l${getLevel(it.id)}" href="#/map/${t.id}/${idx}" aria-label="${esc(it.roman)}">
         <span class="dot"></span><span class="ch">${it.ch}</span><span class="rm">${esc(it.roman)}</span></a>`).join('')}
     </div></section>`).join('')}
   </div>`;
@@ -377,16 +344,24 @@ document.addEventListener('click', async (e) => {
     el.classList.add('playing');
     await speak(el.dataset.text, { rate: Number(el.dataset.rate) || 0.85 });
     el.classList.remove('playing');
-    if (lesson && lesson.step === 1) raiseLevel(lesson.item.id, 1);
-  } else if (act === 'step') {
-    lesson.step = Number(el.dataset.to);
-    draw();
-    scrollTo({ top: 0 });
+    if (sheet) raiseLevel(sheet.t.items[sheet.idx].id, 1);
+  } else if (act === 'close') {
+    const base = sheet.base;
+    const t = sheet.t.id;
+    sheet = null;
+    location.hash = base === 'map' ? '#/map' : `#/track/${t}`;
+  } else if (act === 'sheet-go') {
+    const i = Number(el.dataset.to);
+    if (i < 0 || i >= sheet.t.items.length) return;
+    stopListening();
+    history.replaceState(null, '', `#/${sheet.base}/${sheet.t.id}/${i}`);
+    sheet = { t: sheet.t, idx: i, base: sheet.base, state: 'idle', result: null, error: '', clip: null };
+    drawSheet();
   } else if (act === 'listen') onListen();
   else if (act === 'record') onRecord();
-  else if (act === 'clip') new Audio(lesson.clip).play();
+  else if (act === 'clip') new Audio(sheet.clip).play();
   else if (act === 'rate') {
-    mastered(lesson.item, Number(el.dataset.v));
+    mastered(sheet.t.items[sheet.idx], Number(el.dataset.v));
     toast(el.dataset.v === '3' ? 'Nice work' : 'Keep going, you’ll get it');
   } else if (act === 'pick') {
     const r = quiz.rounds[quiz.i];
@@ -396,7 +371,7 @@ document.addEventListener('click', async (e) => {
   } else if (act === 'quiz-next') { quiz.i++; renderTricky(); }
   else if (act === 'quiz-again') { startQuiz(); renderTricky(); }
   else if (act === 'reset') {
-    if (confirm('Reset all your progress on this device?')) { resetProgress(); lesson = null; renderHome(); }
+    if (confirm('Reset all your progress on this device?')) { resetProgress(); renderHome(); }
   }
 });
 
@@ -405,15 +380,26 @@ document.addEventListener('click', async (e) => {
 function route() {
   stopListening();
   const [page, a, b] = location.hash.replace(/^#\/?/, '').split('/');
-  if (page !== 'learn') lesson = null;
   if (page !== 'tricky') quiz = null;
+  const idx = b === undefined ? NaN : Number(b);
   if (page === 'track') renderTrack(a);
-  else if (page === 'learn') renderLesson(a, Number(b));
   else if (page === 'map') renderMap();
   else if (page === 'tricky') renderTricky();
   else renderHome();
-  if (page !== 'learn') scrollTo({ top: 0 });
+  if ((page === 'track' || page === 'map') && !Number.isNaN(idx)) {
+    const t = trackOf(a);
+    if (t && t.items[idx]) {
+      if (!sheet || sheet.t.id !== t.id || sheet.idx !== idx || sheet.base !== page) sheet = { t, idx, base: page, state: 'idle', result: null, error: '', clip: null };
+      drawSheet();
+      return;
+    }
+  }
+  sheet = null;
+  $sheet.innerHTML = '';
+  document.body.style.overflow = '';
+  scrollTo({ top: 0 });
 }
 
 addEventListener('hashchange', route);
+addEventListener('keydown', (e) => e.key === 'Escape' && sheet && document.querySelector('[data-act="close"]').click());
 route();
