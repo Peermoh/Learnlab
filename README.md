@@ -21,16 +21,32 @@ Progress is saved in `localStorage`; there are no accounts yet.
 | File | Purpose |
 |---|---|
 | `public/js/data.js` | All lesson content (letters, tips, example words, tricky pairs) |
-| `public/js/speech.js` | Text to speech and recording |
+| `public/js/speech.js` | Native audio playback (browser voice fallback) and recording |
+| `tools/generate_audio.py` | Generates the native audio files |
 | `public/js/store.js` | Progress storage |
 | `public/js/app.js` | Screens and routing |
 | `public/css/styles.css` | Design (light and dark) |
 
 ## Next steps
 
-- Swap browser TTS for pre-generated audio files (change `speak()` in `public/js/speech.js`).
 - Optional pronunciation scoring (e.g. Azure Pronunciation Assessment or MFCC/DTW against native audio).
 - Intermediate and Advanced levels.
+
+## Native audio
+
+The **Hear**, **Slow** and **Native** buttons play MP3s from `public/audio/` when they exist,
+and fall back to the browser's own Hindi voice otherwise. Generate them once (about 200 short
+clips, roughly a minute):
+
+```sh
+pip install edge-tts
+python tools/generate_audio.py                                   # female voice (Swara)
+python tools/generate_audio.py --voice hi-IN-MadhurNeural --force   # male voice instead
+```
+
+Then commit `public/audio/` and deploy. Re-run the script after adding words to `data.js`;
+it only creates the missing files. edge-tts uses Microsoft Edge's free online voices through an
+unofficial endpoint: fine for personal use, but use an official TTS service before a commercial launch.
 
 ## Practising a sound
 

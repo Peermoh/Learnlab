@@ -1,7 +1,7 @@
 // Tells the learner when a newer version of the app has been deployed.
 // It fingerprints our own files, then re-checks on focus and every minute.
 
-const FILES = ['js/app.js', 'js/data.js', 'js/speech.js', 'js/store.js', 'js/update.js', 'css/styles.css', 'index.html'];
+const FILES = ['js/app.js', 'js/data.js', 'js/speech.js', 'js/store.js', 'js/update.js', 'css/styles.css', 'index.html', 'audio/manifest.json'];
 const EVERY_MS = 60 * 1000;
 
 async function fingerprint() {

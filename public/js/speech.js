@@ -1,6 +1,32 @@
-// Audio out (text to speech) and audio in (recording the learner).
-// Everything the UI needs goes through this file, so a better voice can replace
-// speak() without touching screens.
+// Audio out (recorded native voice, or the browser's voice as a fallback) and
+// audio in (recording the learner). Screens only call speak() and startRecording().
+
+// ---------- Native audio files (made by tools/generate_audio.py) ----------
+
+let audioFiles = new Set();
+const ready = fetch('audio/manifest.json', { cache: 'no-cache' })
+  .then((r) => (r.ok ? r.json() : { files: [] }))
+  .then((m) => { audioFiles = new Set(m.files || []); })
+  .catch(() => {});
+
+/** File name for a piece of text. Must match audio_key() in tools/generate_audio.py. */
+const audioKey = (text) => [...text.normalize('NFC')].map((c) => c.codePointAt(0).toString(16)).join('-');
+
+export const hasAudioFiles = () => audioFiles.size > 0;
+
+let current = null;
+
+function playFile(key) {
+  return new Promise((resolve) => {
+    const a = new Audio(`audio/${key}.mp3`);
+    current = a;
+    a.onended = () => resolve(true);
+    a.onerror = () => resolve(false);
+    a.play().catch(() => resolve(false));
+  });
+}
+
+// ---------- Browser voice (fallback) ----------
 
 const hasTTS = 'speechSynthesis' in window;
 let voices = [];
@@ -17,14 +43,12 @@ const hindiVoice = () =>
   voices.find((v) => v.lang.replace('_', '-').toLowerCase() === 'hi-in') ||
   voices.find((v) => v.lang.toLowerCase().startsWith('hi'));
 
-export const ttsAvailable = () => hasTTS;
-export const hasHindiVoice = () => !!hindiVoice();
+export const ttsAvailable = () => hasTTS || hasAudioFiles();
+export const hasHindiVoice = () => hasAudioFiles() || !!hindiVoice();
 
-/** Say `text` out loud in Hindi. Resolves when finished (or immediately if unsupported). */
-export function speak(text, { rate = 0.85 } = {}) {
+function speakTTS(text, rate) {
   return new Promise((resolve) => {
     if (!hasTTS) return resolve(false);
-    speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'hi-IN';
     const v = hindiVoice();
@@ -36,7 +60,24 @@ export function speak(text, { rate = 0.85 } = {}) {
   });
 }
 
-export const stopSpeaking = () => hasTTS && speechSynthesis.cancel();
+export function stopSpeaking() {
+  if (current) current.pause();
+  if (hasTTS) speechSynthesis.cancel();
+}
+
+/**
+ * Say `text` in Hindi. Plays the native recording when there is one (slow rates use
+ * the slow recording), otherwise the browser's voice. Resolves when finished.
+ */
+export async function speak(text, { rate = 0.85 } = {}) {
+  stopSpeaking();
+  await ready;
+  const key = audioKey(text);
+  const slow = rate < 0.6;
+  if (slow && audioFiles.has(`${key}.slow`) && (await playFile(`${key}.slow`))) return true;
+  if (audioFiles.has(key) && (await playFile(key))) return true;
+  return speakTTS(text, rate);
+}
 
 // ---------- Recording (replay your own voice) ----------
 
