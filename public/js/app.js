@@ -4,6 +4,7 @@ import {
   speak, hasHindiVoice, ttsAvailable,
   canRecognize, listen, stopListening, scoreWord, verdict, startRecording,
 } from './speech.js';
+import { watchForUpdates } from './update.js';
 
 const $app = document.getElementById('app');
 const $toast = document.getElementById('toast');
@@ -450,3 +451,4 @@ function route() {
 addEventListener('hashchange', route);
 addEventListener('keydown', (e) => e.key === 'Escape' && sheet && document.querySelector('[data-act="close"]').click());
 route();
+watchForUpdates();

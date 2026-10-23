@@ -4,6 +4,6 @@
   Permissions-Policy: microphone=(self), camera=(), geolocation=()
 
 /js/*
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: no-cache
 /css/*
-  Cache-Control: public, max-age=300, must-revalidate
+  Cache-Control: no-cache
