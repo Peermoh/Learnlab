@@ -2,7 +2,7 @@ import { TRACKS, ALL_ITEMS, TRICKY_PAIRS } from './data.js';
 import { getLevel, raiseLevel, resetProgress, progressOf } from './store.js';
 import {
   speak, hasHindiVoice, ttsAvailable,
-  canRecognize, listen, stopListening, scoreWord, verdict, startRecording,
+  canRecognize, listen, stopListening, scoreWord, verdict, startRecording, transcribeCloud, cloudAvailable,
 } from './speech.js';
 import { watchForUpdates } from './update.js';
 
@@ -159,9 +159,9 @@ function renderTrack(id) {
 let sheet = null; // { t, idx, state, result, error, clip, recorder }
 let player = null;
 
-function setClip(sh, url) {
+function setClip(sh, blob) {
   if (sh.clip) URL.revokeObjectURL(sh.clip);
-  sh.clip = url;
+  sh.clip = blob ? URL.createObjectURL(blob) : null;
 }
 const $sheet = document.createElement('div');
 document.body.appendChild($sheet);
@@ -179,7 +179,7 @@ const MIC_ERRORS = {
 function drawSheet() {
   const { t, idx, state, result, error } = sheet;
   const item = t.items[idx];
-  const rec = canRecognize;
+  const rec = canRecognize || cloudAvailable();
   const go = (i) => `#/${sheet.base}/${t.id}/${i}`;
 
   let feedback = '';
@@ -195,9 +195,11 @@ function drawSheet() {
   } else if (!rec) {
     feedback = `<p class="note">Voice checking isn’t supported in this browser (try Chrome or Edge). Record yourself and compare with the native voice instead.</p>`;
   }
+  if (sheet.note) feedback += `<p class="note">${esc(sheet.note)}</p>`;
 
   const micLabel =
     state === 'recording' ? 'Recording… tap to stop'
+    : state === 'processing' ? 'Checking your pronunciation…'
     : state === 'listening' ? 'Listening… say the word'
     : rec ? 'Tap and say the word' : 'Tap to record yourself';
   const busy = state !== 'idle';
@@ -230,7 +232,7 @@ function drawSheet() {
       </div>
 
       <div class="say-box">
-        <div class="mic-wrap"><button class="mic small ${busy ? 'live' : ''}" data-act="${rec && state !== 'recording' ? 'listen' : 'record'}" aria-label="${busy ? 'Stop' : 'Say it'}">${busy ? ICON.stop : ICON.mic}</button></div>
+        <div class="mic-wrap"><button class="mic small ${state === 'processing' ? 'wait' : busy ? 'live' : ''}" data-act="${rec && state !== 'recording' ? 'listen' : 'record'}" aria-label="${busy ? 'Stop' : 'Say it'}">${state === 'processing' ? '<span class="spin"></span>' : busy ? ICON.stop : ICON.mic}</button></div>
         <p class="mic-hint">${micLabel}</p>
         ${sheet.clip || (rec && state === 'idle') ? `<div class="actions">
           ${sheet.clip ? `<button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>Play my voice</button>` : ''}
@@ -254,20 +256,72 @@ function mastered(item, level) {
   }
 }
 
+function finishAttempt(mine, item, text, alts) {
+  mine.result = scoreWord(item.word.hi, alts || [text]);
+  const v = verdict(mine.result.score);
+  mastered(item, v === 'great' ? 3 : v === 'almost' ? 2 : 1);
+}
+
 async function onListen() {
-  if (sheet.state === 'listening') return stopListening();
-  if (sheet.state !== 'idle') return;
   const mine = sheet;
-  const item = mine.t.items[mine.idx];
-  mine.state = 'listening';
+  if (mine.state === 'listening') {
+    if (mine.recorder) return finishRecordedAttempt(mine); // cloud path: tap to stop early
+    return stopListening(); // browser recogniser path
+  }
+  if (mine.state !== 'idle') return;
   mine.result = null;
   mine.error = '';
+  mine.note = '';
+
+  if (cloudAvailable()) {
+    try {
+      mine.recorder = await startRecording({ onSilence: () => mine.state === 'listening' && finishRecordedAttempt(mine) });
+      mine.state = 'listening';
+      drawSheet();
+      return;
+    } catch {
+      mine.error = MIC_ERRORS['not-allowed'];
+      if (sheet === mine) drawSheet();
+      return;
+    }
+  }
+  return browserAttempt(mine);
+}
+
+// Record, then ask the cloud model what was said.
+async function finishRecordedAttempt(mine) {
+  const item = mine.t.items[mine.idx];
+  const rec = mine.recorder;
+  mine.recorder = null;
+  mine.state = 'processing';
+  if (sheet === mine) drawSheet();
+  const blob = await rec.stop();
+  setClip(mine, blob);
+  try {
+    const text = await transcribeCloud(blob);
+    if (text.trim()) finishAttempt(mine, item, text);
+    else mine.error = MIC_ERRORS['no-speech'];
+  } catch (e) {
+    if (e.code === 'unavailable' && canRecognize) {
+      mine.note = 'Using your browser’s voice check instead.';
+      mine.state = 'idle';
+      return browserAttempt(mine);
+    }
+    mine.error = e.code === 'network' ? MIC_ERRORS.network : 'The pronunciation checker had a problem. Please try again in a moment.';
+  }
+  mine.state = 'idle';
+  if (sheet === mine) drawSheet();
+}
+
+// Fallback: the browser's own recogniser (Chrome / Edge / Safari).
+async function browserAttempt(mine) {
+  const item = mine.t.items[mine.idx];
+  mine.state = 'listening';
   drawSheet();
 
   // Record while recognising so the learner can replay their voice. Best effort:
-  // some phones let only one thing use the mic at a time.
+  // touch devices usually can't share the mic, so only desktops try.
   let rec = null;
-  // Touch devices (phones, tablets) usually can't share the mic, so only desktops try.
   if (!navigator.maxTouchPoints) {
     try { rec = await startRecording(); } catch { /* recording is optional */ }
   }
@@ -283,13 +337,8 @@ async function onListen() {
     } else err = e;
   }
   if (rec) setClip(mine, await rec.stop());
-  if (alts) {
-    mine.result = scoreWord(item.word.hi, alts);
-    const v = verdict(mine.result.score);
-    mastered(item, v === 'great' ? 3 : v === 'almost' ? 2 : 1);
-  } else {
-    mine.error = err.message in MIC_ERRORS ? MIC_ERRORS[err.message] : `Something went wrong (${err.message}).`;
-  }
+  if (alts) finishAttempt(mine, item, '', alts);
+  else mine.error = err.message in MIC_ERRORS ? MIC_ERRORS[err.message] : `Something went wrong (${err.message}).`;
   mine.state = 'idle';
   if (sheet === mine) drawSheet();
 }
@@ -399,7 +448,7 @@ document.addEventListener('click', async (e) => {
     stopListening();
     sheet.recorder?.stop();
     history.replaceState(null, '', `#/${sheet.base}/${sheet.t.id}/${i}`);
-    sheet = { t: sheet.t, idx: i, base: sheet.base, state: 'idle', result: null, error: '', clip: null, recorder: null };
+    sheet = { t: sheet.t, idx: i, base: sheet.base, state: 'idle', result: null, error: '', note: '', clip: null, recorder: null };
     drawSheet();
   } else if (act === 'listen') onListen();
   else if (act === 'record') onRecord();
@@ -437,7 +486,7 @@ function route() {
   if ((page === 'track' || page === 'map') && !Number.isNaN(idx)) {
     const t = trackOf(a);
     if (t && t.items[idx]) {
-      if (!sheet || sheet.t.id !== t.id || sheet.idx !== idx || sheet.base !== page) sheet = { t, idx, base: page, state: 'idle', result: null, error: '', clip: null, recorder: null };
+      if (!sheet || sheet.t.id !== t.id || sheet.idx !== idx || sheet.base !== page) sheet = { t, idx, base: page, state: 'idle', result: null, error: '', note: '', clip: null, recorder: null };
       drawSheet();
       return;
     }

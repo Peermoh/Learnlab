@@ -118,22 +118,62 @@ export function scoreWord(target, alternatives) {
 
 export const verdict = (score) => (score >= 0.8 ? 'great' : score >= 0.5 ? 'almost' : 'retry');
 
-// ---------- Recording (lets the learner play back their own voice) ----------
+// ---------- Recording (replay your own voice + cloud scoring) ----------
 
-/** Start recording the mic. Returns { stop() } where stop() resolves with a playable URL (or null). */
-export async function startRecording(maxMs = 8000) {
+/**
+ * Start recording the mic. Returns { stop() }; stop() resolves with a Blob (or null).
+ * With onSilence, it calls back once the learner has spoken and then gone quiet
+ * (or nobody spoke for a few seconds), so the UI can finish by itself.
+ */
+export async function startRecording({ maxMs = 8000, onSilence } = {}) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const rec = new MediaRecorder(stream);
   const chunks = [];
   rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  let ctx = null;
+  let poll = null;
   const done = new Promise((resolve) => {
     rec.onstop = () => {
+      clearInterval(poll);
+      if (ctx) ctx.close().catch(() => {});
       stream.getTracks().forEach((t) => t.stop());
-      resolve(chunks.length ? URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })) : null);
+      resolve(chunks.length ? new Blob(chunks, { type: rec.mimeType }) : null);
     };
   });
   rec.start();
   const timer = setTimeout(() => rec.state !== 'inactive' && rec.stop(), maxMs);
+
+  if (onSilence) {
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(analyser.fftSize);
+      const t0 = performance.now();
+      let heard = false;
+      let quietSince = t0;
+      let fired = false;
+      poll = setInterval(() => {
+        analyser.getByteTimeDomainData(buf);
+        let peak = 0;
+        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+        const now = performance.now();
+        if (peak > 12) {
+          heard = true;
+          quietSince = now;
+        }
+        const quiet = now - quietSince;
+        if (!fired && ((heard && quiet > 900 && now - t0 > 700) || (!heard && now - t0 > 5000))) {
+          fired = true;
+          onSilence();
+        }
+      }, 100);
+    } catch {
+      /* no voice detection: the learner taps to stop */
+    }
+  }
+
   return {
     stop() {
       clearTimeout(timer);
@@ -141,4 +181,48 @@ export async function startRecording(maxMs = 8000) {
       return done;
     },
   };
+}
+
+// ---------- Cloud scoring (Cloudflare Workers AI via /api/transcribe) ----------
+
+let cloudUsable = true; // flips to false if the endpoint doesn't exist (e.g. local dev server)
+export const cloudAvailable = () => cloudUsable;
+
+/** Decode any recorded blob to 16 kHz mono 16-bit WAV, which the speech model accepts. */
+async function toWav16k(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ctx = new AC();
+  const decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+  ctx.close().catch(() => {});
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(decoded.duration * 16000)), 16000);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start();
+  const pcm = (await off.startRendering()).getChannelData(0);
+  const view = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const str = (o, t) => [...t].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF'); view.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  str(36, 'data'); view.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+/** Returns the transcript. Throws { code: 'unavailable' } if no scoring service exists here. */
+export async function transcribeCloud(blob) {
+  const wav = await toWav16k(blob);
+  let res;
+  try {
+    res = await fetch('/api/transcribe', { method: 'POST', body: wav, headers: { 'content-type': 'audio/wav' } });
+  } catch {
+    throw Object.assign(new Error('network'), { code: 'network' });
+  }
+  if (res.status === 404 || res.status === 405 || res.status === 501) {
+    cloudUsable = false;
+    throw Object.assign(new Error('unavailable'), { code: 'unavailable' });
+  }
+  if (!res.ok) throw Object.assign(new Error('service'), { code: 'service' });
+  return (await res.json()).text || '';
 }

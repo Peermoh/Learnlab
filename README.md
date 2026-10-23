@@ -33,8 +33,16 @@ Progress is saved in `localStorage`; there are no accounts yet.
 - Add phoneme-level scoring (e.g. Azure Pronunciation Assessment) behind `scoreWord()`.
 - Intermediate and Advanced levels.
 
+## Pronunciation checking
+
+The mic records you, converts the audio to 16 kHz WAV in the browser, and POSTs it to
+`/api/transcribe` (`src/worker.js`), which runs Whisper on Cloudflare Workers AI
+(`@cf/openai/whisper-large-v3-turbo`, Hindi). The transcript is scored against the target word.
+If that endpoint doesn't exist (e.g. the plain `http.server`), the app falls back to the
+browser's own speech recognition.
+
 ## Deploy to Cloudflare
 
-Static site, no build step. In Cloudflare Pages: connect this repo, leave the
-build command empty and set the output directory to `public`.
-Or from the CLI: `npx wrangler deploy` (uses `wrangler.jsonc`).
+No build step. `wrangler.jsonc` serves `public/` as static assets, runs `src/worker.js` for
+`/api/*` and binds Workers AI as `AI`. Deploy with `npx wrangler deploy`, or connect the repo
+in Workers & Pages (Workers Builds) with deploy command `npx wrangler deploy`.
