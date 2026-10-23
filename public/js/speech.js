@@ -102,18 +102,25 @@ function distance(a, b) {
   return dp[a.length][b.length];
 }
 
-/** Compare what was heard with the word we asked for. Returns { score 0..1, heard }. */
+/**
+ * Compare what was heard with the word we asked for. The learner says one word, so each
+ * heard word is scored on its own and the best match wins (this also ignores stray extras).
+ * Returns { score 0..1, heard } where heard is that single word.
+ */
 export function scoreWord(target, alternatives) {
   const t = normalize(target);
-  let best = { score: 0, heard: alternatives[0] || '' };
+  let best = null;
   for (const alt of alternatives) {
-    const a = normalize(alt);
-    if (!a) continue;
-    let s = 1 - distance(t, a) / Math.max(t.length, a.length);
-    if (a.includes(t)) s = Math.max(s, 0.9); // said extra words around it
-    if (s > best.score) best = { score: s, heard: alt };
+    for (const token of alt.split(/\s+/).filter(Boolean)) {
+      const a = normalize(token);
+      if (!a) continue;
+      const s = 1 - distance(t, a) / Math.max(t.length, a.length);
+      if (!best || s > best.score) best = { score: s, heard: token };
+    }
   }
-  return best;
+  if (best) return best;
+  const first = alternatives.map((x) => x.trim().split(/\s+/)[0]).find(Boolean) || '';
+  return { score: 0, heard: first };
 }
 
 export const verdict = (score) => (score >= 0.8 ? 'great' : score >= 0.5 ? 'almost' : 'retry');
@@ -188,7 +195,11 @@ export async function startRecording({ maxMs = 8000, onSilence } = {}) {
 let cloudUsable = true; // flips to false if the endpoint doesn't exist (e.g. local dev server)
 export const cloudAvailable = () => cloudUsable;
 
-/** Decode any recorded blob to 16 kHz mono 16-bit WAV, which the speech model accepts. */
+/**
+ * Decode a recording to 16 kHz mono 16-bit WAV, trimmed to the part where the learner spoke.
+ * Long silences make the speech model invent words, so only the speech (plus a little padding) is sent.
+ * Returns null if nothing audible was recorded.
+ */
 async function toWav16k(blob) {
   const AC = window.AudioContext || window.webkitAudioContext;
   const ctx = new AC();
@@ -199,20 +210,43 @@ async function toWav16k(blob) {
   src.buffer = decoded;
   src.connect(off.destination);
   src.start();
-  const pcm = (await off.startRendering()).getChannelData(0);
+  let pcm = (await off.startRendering()).getChannelData(0);
+
+  // Find where speech starts and ends using 20 ms frames.
+  const frame = 320;
+  const rms = [];
+  for (let i = 0; i + frame <= pcm.length; i += frame) {
+    let sum = 0;
+    for (let j = 0; j < frame; j++) sum += pcm[i + j] * pcm[i + j];
+    rms.push(Math.sqrt(sum / frame));
+  }
+  const loudest = Math.max(0, ...rms);
+  if (loudest < 0.01) return null; // silence
+  const gate = Math.max(0.008, loudest * 0.12);
+  const first = rms.findIndex((r) => r > gate);
+  const last = rms.length - 1 - [...rms].reverse().findIndex((r) => r > gate);
+  const pad = 10; // 200 ms
+  pcm = pcm.slice(Math.max(0, first - pad) * frame, Math.min(rms.length, last + 1 + pad) * frame);
+
+  // Even out quiet microphones.
+  let peak = 0;
+  for (const v of pcm) peak = Math.max(peak, Math.abs(v));
+  const gain = peak > 0 ? Math.min(8, 0.9 / peak) : 1;
+
   const view = new DataView(new ArrayBuffer(44 + pcm.length * 2));
   const str = (o, t) => [...t].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
   str(0, 'RIFF'); view.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
   view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
   view.setUint32(24, 16000, true); view.setUint32(28, 32000, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
   str(36, 'data'); view.setUint32(40, pcm.length * 2, true);
-  for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 0x7fff, true);
+  for (let i = 0; i < pcm.length; i++) view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i] * gain)) * 0x7fff, true);
   return new Blob([view], { type: 'audio/wav' });
 }
 
 /** Returns the transcript. Throws { code: 'unavailable' } if no scoring service exists here. */
 export async function transcribeCloud(blob) {
   const wav = await toWav16k(blob);
+  if (!wav) throw Object.assign(new Error('silent'), { code: 'silent' });
   let res;
   try {
     res = await fetch('/api/transcribe', { method: 'POST', body: wav, headers: { 'content-type': 'audio/wav' } });

@@ -24,13 +24,17 @@ export default {
     if (!body.length) return json({ error: 'empty' }, 400);
     if (body.length > MAX_BYTES) return json({ error: 'too-large' }, 413);
 
+    const audio = toBase64(body);
+    const run = (extra) => env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio, language: 'hi', task: 'transcribe', ...extra });
     try {
-      const out = await env.AI.run('@cf/openai/whisper-large-v3-turbo', {
-        audio: toBase64(body),
-        language: 'hi',
-        task: 'transcribe',
-      });
-      return json({ text: (out && out.text ? String(out.text) : '').trim() });
+      let out;
+      try {
+        // Options that reduce invented text on short clips. If the model rejects them, retry plainly.
+        out = await run({ vad_filter: true, condition_on_previous_text: false });
+      } catch {
+        out = await run({});
+      }
+      return json({ text: (out && out.text ? String(out.text) : '').trim().slice(0, 200) });
     } catch (e) {
       return json({ error: 'ai', detail: String(e && e.message ? e.message : e) }, 502);
     }

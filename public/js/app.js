@@ -317,12 +317,13 @@ async function finishRecordedAttempt(mine) {
     if (text.trim()) finishAttempt(mine, item, text);
     else mine.error = MIC_ERRORS['no-speech'];
   } catch (e) {
-    if (e.code === 'unavailable' && canRecognize) {
+    if (e.code === 'silent') mine.error = MIC_ERRORS['no-speech'];
+    else if (e.code === 'unavailable' && canRecognize) {
       mine.note = 'Using your browser’s voice check instead.';
       mine.state = 'idle';
       return browserAttempt(mine);
     }
-    mine.error = e.code === 'network' ? MIC_ERRORS.network : 'The pronunciation checker had a problem. Please try again in a moment.';
+    else mine.error = e.code === 'network' ? MIC_ERRORS.network : 'The pronunciation checker had a problem. Please try again in a moment.';
   }
   mine.state = 'idle';
   if (sheet === mine) drawSheet();
