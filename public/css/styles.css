@@ -214,21 +214,6 @@ h2 { font-size: 20px; letter-spacing: -0.02em; font-weight: 800; }
 @keyframes pulse { 50% { transform: scale(1.14); } }
 .mic-hint { text-align: center; color: var(--muted); font-size: 14px; margin-top: 8px; min-height: 22px; }
 
-.result { text-align: center; padding: 22px 18px; border-radius: 24px; animation: pop 0.4s cubic-bezier(.2,1.4,.4,1); }
-.result.great { background: linear-gradient(160deg, var(--card), rgba(47, 182, 124, 0.18)); }
-.result.almost { background: linear-gradient(160deg, var(--card), rgba(245, 181, 61, 0.2)); }
-.result.retry { background: linear-gradient(160deg, var(--card), rgba(239, 106, 106, 0.16)); }
-.result .emoji { font-size: 40px; }
-.result h3 { font-size: 22px; margin-top: 4px; }
-.result .heard { margin-top: 8px; color: var(--muted); font-size: 14px; }
-.result .heard b { font-family: var(--dev); color: var(--ink); font-size: 18px; }
-.meter { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; max-width: 260px; margin: 14px auto 4px; }
-.meter i { display: block; height: 100%; border-radius: inherit; }
-.great .meter i { background: var(--good); }
-.almost .meter i { background: var(--warn); }
-.retry .meter i { background: var(--bad); }
-
-.compare { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .rate { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
 .note {
   margin-top: 14px; font-size: 13px; padding: 10px 14px; border-radius: 14px; background: rgba(245, 181, 61, 0.16); color: var(--ink); }
@@ -308,18 +293,9 @@ h2 { font-size: 20px; letter-spacing: -0.02em; font-weight: 800; }
 .update-banner span:not(.u-ico) { font-size: 13px; opacity: 0.75; }
 .update-banner button { padding: 10px 18px; border-radius: 14px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--primary), var(--primary-2)); }
 @keyframes drop { from { transform: translate(-50%, -140%); } to { transform: translate(-50%, 0); } }
-.mic.wait { background: linear-gradient(135deg, var(--primary), var(--primary-2)); pointer-events: none; }
-.spin { width: 34px; height: 34px; border-radius: 50%; border: 4px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
-/* ---------- Result comparison, toggle state, version ---------- */
+/* ---------- Toggle state, version, compare ---------- */
 .iconbtn.on { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; }
-.cmp { display: grid; gap: 10px; margin-top: 14px; text-align: left; }
-.cmp-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 18px; background: var(--card); }
-.cmp-row .lbl { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.cmp-row .w { font-family: var(--dev); font-size: 30px; font-weight: 600; line-height: 1.25; }
-.cmp-row .r { font-weight: 700; font-size: 14px; color: var(--muted); }
-.cmp-row.you .w { color: var(--accent); }
-.cmp-row .play { padding: 10px 14px; }
 .ver { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 26px; }
 .ver button { color: var(--primary); font-weight: 700; margin-left: 6px; }
+.compare-card { margin-top: 14px; padding: 18px 16px; border-radius: 24px; background: var(--card); box-shadow: var(--shadow); animation: pop 0.35s cubic-bezier(.2,1.4,.4,1); }

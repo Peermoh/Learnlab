@@ -1,8 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "learnlab",
-  "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./public" },
-  "ai": { "binding": "AI" }
+  "assets": { "directory": "./public" }
 }
