@@ -231,13 +231,13 @@ function drawSheet() {
       <div class="say-box">
         <div class="mic-wrap"><button class="mic small ${busy ? 'live' : ''}" data-act="${rec && state !== 'recording' ? 'listen' : 'record'}" aria-label="${busy ? 'Stop' : 'Say it'}">${busy ? ICON.stop : ICON.mic}</button></div>
         <p class="mic-hint">${micLabel}</p>
-        ${feedback}
         ${sheet.clip || (rec && state === 'idle') ? `<div class="actions">
           ${sheet.clip ? `<button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>Play my voice</button>` : ''}
-          ${rec ? `<button class="play" data-act="record"><span class="pi">${ICON.mic}</span>Record only</button>` : ''}
+          ${rec ? `<button class="play" data-act="record"><span class="pi">${ICON.mic}</span>Record myself</button>` : ''}
           ${!rec && sheet.clip ? `<button class="btn soft" data-act="rate" data-v="3">Nailed it</button><button class="btn soft" data-act="rate" data-v="2">Almost</button>` : ''}
         </div>` : ''}
         ${state === 'recording' && rec ? `<div class="actions"><button class="play" data-act="record"><span class="pi">${ICON.stop}</span>Stop recording</button></div>` : ''}
+        ${feedback}
       </div>
     </div>
   </section>`;
@@ -266,7 +266,10 @@ async function onListen() {
   // Record while recognising so the learner can replay their voice. Best effort:
   // some phones let only one thing use the mic at a time.
   let rec = null;
-  try { rec = await startRecording(); } catch { /* recording is optional */ }
+  // Touch devices (phones, tablets) usually can't share the mic, so only desktops try.
+  if (!navigator.maxTouchPoints) {
+    try { rec = await startRecording(); } catch { /* recording is optional */ }
+  }
   let alts = null;
   let err = null;
   try {
