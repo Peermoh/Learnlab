@@ -115,7 +115,7 @@ export function scoreWord(target, alternatives) {
       const a = normalize(token);
       if (!a) continue;
       const s = 1 - distance(t, a) / Math.max(t.length, a.length);
-      if (!best || s > best.score) best = { score: s, heard: token };
+      if (!best || s > best.score) best = { score: s, heard: token.replace(/[^\p{L}\p{M}\p{N}]/gu, '') };
     }
   }
   if (best) return best;
@@ -243,7 +243,7 @@ async function toWav16k(blob) {
   return new Blob([view], { type: 'audio/wav' });
 }
 
-/** Returns what each speech model heard. Throws { code: 'unavailable' } if no scoring service exists here. */
+/** Returns the transcript. Throws { code: 'unavailable' } if no scoring service exists here. */
 export async function transcribeCloud(blob, hints = []) {
   const wav = await toWav16k(blob);
   if (!wav) throw Object.assign(new Error('silent'), { code: 'silent' });
@@ -259,10 +259,5 @@ export async function transcribeCloud(blob, hints = []) {
     throw Object.assign(new Error('unavailable'), { code: 'unavailable' });
   }
   if (!res.ok) throw Object.assign(new Error('service'), { code: 'service' });
-  const data = await res.json();
-  // { whisper: { text } | { error }, nova: { text } | { error } }; older workers only send { text }.
-  return {
-    whisper: data.whisper || { text: data.text || '' },
-    nova: data.nova || { error: 'not available' },
-  };
+  return (await res.json()).text || '';
 }

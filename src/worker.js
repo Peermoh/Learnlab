@@ -28,26 +28,6 @@ async function runWhisper(env, bytes, hint) {
   return clean(out && out.text);
 }
 
-// Deepgram Nova-3 (hosted on Workers AI). Hindi is available through its multilingual mode,
-// so try Hindi first, then multilingual, then auto-detect.
-async function runNova(env, bytes) {
-  const attempts = [{ language: 'hi' }, { language: 'multi' }, { detect_language: true }];
-  let last;
-  for (const opts of attempts) {
-    try {
-      const out = await env.AI.run('@cf/deepgram/nova-3', {
-        audio: { body: new Response(bytes).body, contentType: 'audio/wav' },
-        ...opts,
-      });
-      const alt = out?.results?.channels?.[0]?.alternatives?.[0];
-      return clean(alt ? alt.transcript : out?.text);
-    } catch (e) {
-      last = e;
-    }
-  }
-  throw last;
-}
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -62,10 +42,10 @@ export default {
     if (body.length > MAX_BYTES) return json({ error: 'too-large' }, 413);
 
     const hint = (url.searchParams.get('p') || '').replace(/[^\u0900-\u097F, ]/g, '').slice(0, 400);
-    const [whisper, nova] = await Promise.allSettled([runWhisper(env, body, hint), runNova(env, body)]);
-    const pick = (r) => (r.status === 'fulfilled' ? { text: r.value } : { error: errText(r.reason) });
-    const res = { whisper: pick(whisper), nova: pick(nova) };
-    if (res.whisper.error && res.nova.error) return json({ error: 'ai', ...res }, 502);
-    return json({ text: res.whisper.text ?? res.nova.text ?? '', ...res });
+    try {
+      return json({ text: await runWhisper(env, body, hint) });
+    } catch (e) {
+      return json({ error: 'ai', detail: errText(e) }, 502);
+    }
   },
 };
