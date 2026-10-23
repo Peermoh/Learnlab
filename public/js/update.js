@@ -1,8 +1,8 @@
 // Tells the learner when a newer version of the app has been deployed.
-// It fingerprints our own files, then re-checks on focus and every few minutes.
+// It fingerprints our own files, then re-checks on focus and every minute.
 
-const FILES = ['js/app.js', 'js/data.js', 'js/speech.js', 'js/store.js', 'js/update.js', 'css/styles.css', 'index.html'];
-const EVERY_MS = 5 * 60 * 1000;
+const FILES = ['js/app.js', 'js/data.js', 'js/speech.js', 'js/store.js', 'js/translit.js', 'js/update.js', 'css/styles.css', 'index.html'];
+const EVERY_MS = 60 * 1000;
 
 async function fingerprint() {
   const parts = await Promise.all(
@@ -12,7 +12,7 @@ async function fingerprint() {
   if (!text.replace(/\u0000/g, '')) return null; // offline or blocked
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
-  return String(h);
+  return (h >>> 0).toString(36);
 }
 
 function showBanner() {
@@ -26,19 +26,29 @@ function showBanner() {
   document.body.appendChild(el);
 }
 
+let baseline = null;
+export const appVersion = () => baseline;
+
+/** Check now. Resolves 'new' (banner shown), 'latest' or 'offline'. */
+export async function checkNow() {
+  const now = await fingerprint();
+  if (!now) return 'offline';
+  if (baseline && now !== baseline) {
+    showBanner();
+    return 'new';
+  }
+  return 'latest';
+}
+
 export async function watchForUpdates() {
-  const baseline = await fingerprint();
+  baseline = await fingerprint();
   if (!baseline) return;
-  let found = false;
-  const check = async () => {
-    if (found) return;
-    const now = await fingerprint();
-    if (now && now !== baseline) {
-      found = true;
-      showBanner();
-    }
-  };
+  document.documentElement.dataset.ver = baseline;
+  dispatchEvent(new Event('swar-version'));
+  const check = () => document.visibilityState === 'visible' && checkNow();
   setInterval(check, EVERY_MS);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && check());
+  document.addEventListener('visibilitychange', check);
+  addEventListener('focus', check);
+  addEventListener('pageshow', check);
   addEventListener('online', check);
 }

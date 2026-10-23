@@ -4,7 +4,8 @@ import {
   speak, hasHindiVoice, ttsAvailable,
   canRecognize, listen, stopListening, scoreWord, verdict, startRecording, transcribeCloud, cloudAvailable,
 } from './speech.js';
-import { watchForUpdates } from './update.js';
+import { watchForUpdates, checkNow } from './update.js';
+import { toRoman } from './translit.js';
 
 const $app = document.getElementById('app');
 const $toast = document.getElementById('toast');
@@ -61,7 +62,7 @@ const ring = (pct, size = 74) => {
 const topbar = (left) => `
   <header class="topbar">
     ${left}
-    <a class="iconbtn" href="#/map" aria-label="Mastery map" title="Mastery map">${ICON.grid}</a>
+    <button class="iconbtn ${location.hash.startsWith('#/map') ? 'on' : ''}" data-act="map-toggle" aria-pressed="${location.hash.startsWith('#/map')}" aria-label="Mastery map" title="Mastery map">${ICON.grid}</button>
   </header>`;
 
 const brand = `<a class="brand" href="#/"><span class="mark dev">स्व</span><span>Swar</span></a>`;
@@ -134,8 +135,16 @@ function renderHome() {
       <span class="go">${ICON.next}</span>
     </a>
     ${started ? `<p style="text-align:center;margin-top:28px"><button class="btn ghost" data-act="reset">Reset progress</button></p>` : ''}
+    <p class="ver">Version <span data-version>…</span><button data-act="check-update">Check for updates</button></p>
   </div>`;
+  stampVersion();
 }
+
+function stampVersion() {
+  const v = document.documentElement.dataset.ver;
+  document.querySelectorAll('[data-version]').forEach((el) => (el.textContent = v || '—'));
+}
+addEventListener('swar-version', stampVersion);
 
 // ---------- Track page ----------
 
@@ -186,10 +195,16 @@ function drawSheet() {
   if (result) {
     const v = verdict(result.score);
     const copy = { great: ['🎉', 'Great, that sounded right!'], almost: ['👍', 'Almost there'], retry: ['🔁', 'Let’s try that again'] }[v];
+    const heard = result.heard || '';
     feedback = `<section class="result ${v}"><div class="emoji">${copy[0]}</div><h3>${copy[1]}</h3>
       <div class="meter"><i style="width:${Math.max(6, Math.round(result.score * 100))}%"></i></div>
-      <div class="heard">I heard: <b>${esc(result.heard || '—')}</b></div>
-      ${v !== 'great' ? `<p class="muted" style="margin-top:10px;font-size:14px"><b>Tip:</b> ${esc(item.tip)}</p>` : ''}</section>`;
+      <div class="cmp">
+        <div class="cmp-row you"><div><div class="lbl">You said</div><div class="w">${heard ? esc(heard) : '—'}</div><div class="r">${heard ? esc(toRoman(heard)) : 'nothing clear'}</div></div>
+          ${sheet.clip ? `<button class="play accent" data-act="clip" aria-label="Play my voice"><span class="pi">${ICON.play}</span>Mine</button>` : ''}</div>
+        <div class="cmp-row"><div><div class="lbl">Target</div><div class="w">${item.word.hi}</div><div class="r">${esc(item.word.roman)}</div></div>
+          <button class="play" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8" aria-label="Hear the word"><span class="pi">${ICON.play}</span>Native</button></div>
+      </div>
+      ${v !== 'great' ? `<p class="muted" style="margin-top:12px;font-size:14px"><b>Tip:</b> ${esc(item.tip)}</p>` : ''}</section>`;
   } else if (error) {
     feedback = `<p class="note">${esc(error)}</p>`;
   } else if (!rec) {
@@ -437,6 +452,14 @@ document.addEventListener('click', async (e) => {
     await speak(el.dataset.text, { rate: Number(el.dataset.rate) || 0.85 });
     el.classList.remove('playing');
     if (sheet) raiseLevel(sheet.t.items[sheet.idx].id, 1);
+  } else if (act === 'map-toggle') {
+    location.hash = location.hash.startsWith('#/map') ? lastPage : '#/map';
+  } else if (act === 'check-update') {
+    el.textContent = 'Checking…';
+    const r = await checkNow();
+    el.textContent = 'Check for updates';
+    if (r === 'latest') toast('You’re on the latest version');
+    else if (r === 'offline') toast('Couldn’t check. Are you online?');
   } else if (act === 'close') {
     const base = sheet.base;
     const t = sheet.t.id;
@@ -474,11 +497,14 @@ document.addEventListener('click', async (e) => {
 
 // ---------- Router ----------
 
+let lastPage = '#/';
+
 function route() {
   stopListening();
   const [page, a, b] = location.hash.replace(/^#\/?/, '').split('/');
   if (page !== 'tricky') quiz = null;
   const idx = b === undefined ? NaN : Number(b);
+  if (page !== 'map') lastPage = page === 'track' ? `#/track/${a}` : page === 'tricky' ? '#/tricky' : '#/';
   if (page === 'track') renderTrack(a);
   else if (page === 'map') renderMap();
   else if (page === 'tricky') renderTricky();
