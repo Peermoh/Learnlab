@@ -10,7 +10,7 @@ listening game and a mastery map.
 ## Run it
 
 ```sh
-python3 -m http.server 8000
+python3 -m http.server 8000 --directory public
 # open http://localhost:8000
 ```
 
@@ -21,14 +21,20 @@ Progress is saved in `localStorage`; there are no accounts yet.
 
 | File | Purpose |
 |---|---|
-| `js/data.js` | All lesson content (letters, tips, example words, tricky pairs) |
-| `js/speech.js` | Text to speech, speech recognition, scoring, recording |
-| `js/store.js` | Progress storage |
-| `js/app.js` | Screens and routing |
-| `css/styles.css` | Design (light and dark) |
+| `public/js/data.js` | All lesson content (letters, tips, example words, tricky pairs) |
+| `public/js/speech.js` | Text to speech, speech recognition, scoring, recording |
+| `public/js/store.js` | Progress storage |
+| `public/js/app.js` | Screens and routing |
+| `public/css/styles.css` | Design (light and dark) |
 
 ## Next steps
 
-- Swap browser TTS for pre-generated audio files (change `speak()` in `speech.js`).
+- Swap browser TTS for pre-generated audio files (change `speak()` in `public/js/speech.js`).
 - Add phoneme-level scoring (e.g. Azure Pronunciation Assessment) behind `scoreWord()`.
 - Intermediate and Advanced levels.
+
+## Deploy to Cloudflare
+
+Static site, no build step. In Cloudflare Pages: connect this repo, leave the
+build command empty and set the output directory to `public`.
+Or from the CLI: `npx wrangler deploy` (uses `wrangler.jsonc`).
