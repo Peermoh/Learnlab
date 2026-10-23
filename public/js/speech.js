@@ -243,7 +243,7 @@ async function toWav16k(blob) {
   return new Blob([view], { type: 'audio/wav' });
 }
 
-/** Returns the transcript. Throws { code: 'unavailable' } if no scoring service exists here. */
+/** Returns what each speech model heard. Throws { code: 'unavailable' } if no scoring service exists here. */
 export async function transcribeCloud(blob, hints = []) {
   const wav = await toWav16k(blob);
   if (!wav) throw Object.assign(new Error('silent'), { code: 'silent' });
@@ -259,5 +259,10 @@ export async function transcribeCloud(blob, hints = []) {
     throw Object.assign(new Error('unavailable'), { code: 'unavailable' });
   }
   if (!res.ok) throw Object.assign(new Error('service'), { code: 'service' });
-  return (await res.json()).text || '';
+  const data = await res.json();
+  // { whisper: { text } | { error }, nova: { text } | { error } }; older workers only send { text }.
+  return {
+    whisper: data.whisper || { text: data.text || '' },
+    nova: data.nova || { error: 'not available' },
+  };
 }

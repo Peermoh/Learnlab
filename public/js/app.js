@@ -199,8 +199,12 @@ function drawSheet() {
     feedback = `<section class="result ${v}"><div class="emoji">${copy[0]}</div><h3>${copy[1]}</h3>
       <div class="meter"><i style="width:${Math.max(6, Math.round(result.score * 100))}%"></i></div>
       <div class="cmp">
+        ${result.engines ? result.engines.map((e) => `<div class="cmp-row you ${e.name === result.best ? 'best' : ''}"><div>
+            <div class="lbl">${e.name} heard${e.name === result.best ? ' · used' : ''}</div>
+            ${e.error ? `<div class="r">Not available: ${esc(e.error)}</div>` : `<div class="w">${e.heard ? esc(e.heard) : '—'}</div><div class="r">${e.heard ? esc(toRoman(e.heard)) + ` · ${Math.round(e.score * 100)}%` : 'nothing clear'}</div>`}</div>
+            ${e.name === result.best && sheet.clip ? `<button class="play accent" data-act="clip" aria-label="Play my voice"><span class="pi">${ICON.play}</span>Mine</button>` : ''}</div>`).join('') : `
         <div class="cmp-row you"><div><div class="lbl">You said</div><div class="w">${heard ? esc(heard) : '—'}</div><div class="r">${heard ? esc(toRoman(heard)) : 'nothing clear'}</div></div>
-          ${sheet.clip ? `<button class="play accent" data-act="clip" aria-label="Play my voice"><span class="pi">${ICON.play}</span>Mine</button>` : ''}</div>
+          ${sheet.clip ? `<button class="play accent" data-act="clip" aria-label="Play my voice"><span class="pi">${ICON.play}</span>Mine</button>` : ''}</div>`}
         <div class="cmp-row"><div><div class="lbl">Target</div><div class="w">${item.word.hi}</div><div class="r">${esc(item.word.roman)}</div></div>
           <button class="play" data-act="say" data-text="${esc(item.word.hi)}" data-rate="0.8" aria-label="Hear the word"><span class="pi">${ICON.play}</span>Native</button></div>
       </div>
@@ -313,9 +317,18 @@ async function finishRecordedAttempt(mine) {
   const blob = await rec.stop();
   setClip(mine, blob);
   try {
-    const text = await transcribeCloud(blob, mine.t.items.map((x) => x.word.hi));
-    if (text.trim()) finishAttempt(mine, item, text);
-    else mine.error = MIC_ERRORS['no-speech'];
+    const out = await transcribeCloud(blob, mine.t.items.map((x) => x.word.hi));
+    // Side-by-side test: score what each model heard, keep the best for the verdict.
+    const engines = [
+      { name: 'Whisper', ...out.whisper },
+      { name: 'Nova-3', ...out.nova },
+    ].map((e) => ({ ...e, ...(e.text ? scoreWord(item.word.hi, [e.text]) : { score: 0, heard: '' }) }));
+    if (engines.some((e) => e.heard)) {
+      const best = engines.reduce((a, b) => (b.score > a.score ? b : a));
+      finishAttempt(mine, item, best.heard);
+      mine.result.engines = engines;
+      mine.result.best = best.name;
+    } else mine.error = MIC_ERRORS['no-speech'];
   } catch (e) {
     if (e.code === 'silent') mine.error = MIC_ERRORS['no-speech'];
     else if (e.code === 'unavailable' && canRecognize) {

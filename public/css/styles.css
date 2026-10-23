@@ -323,3 +323,5 @@ h2 { font-size: 20px; letter-spacing: -0.02em; font-weight: 800; }
 .cmp-row .play { padding: 10px 14px; }
 .ver { text-align: center; color: var(--muted); font-size: 12.5px; margin-top: 26px; }
 .ver button { color: var(--primary); font-weight: 700; margin-left: 6px; }
+.cmp-row.you:not(.best) { opacity: 0.75; }
+.cmp-row.you:not(.best) .w { color: var(--ink); font-size: 24px; }
