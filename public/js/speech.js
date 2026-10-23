@@ -118,19 +118,27 @@ export function scoreWord(target, alternatives) {
 
 export const verdict = (score) => (score >= 0.8 ? 'great' : score >= 0.5 ? 'almost' : 'retry');
 
-// ---------- Recording (for listen-and-compare when recognition is unavailable) ----------
+// ---------- Recording (lets the learner play back their own voice) ----------
 
-export async function recordClip(ms = 2500) {
+/** Start recording the mic. Returns { stop() } where stop() resolves with a playable URL (or null). */
+export async function startRecording(maxMs = 8000) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const rec = new MediaRecorder(stream);
   const chunks = [];
-  rec.ondataavailable = (e) => chunks.push(e.data);
-  return new Promise((resolve) => {
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const done = new Promise((resolve) => {
     rec.onstop = () => {
       stream.getTracks().forEach((t) => t.stop());
-      resolve(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })));
+      resolve(chunks.length ? URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })) : null);
     };
-    rec.start();
-    setTimeout(() => rec.stop(), ms);
   });
+  rec.start();
+  const timer = setTimeout(() => rec.state !== 'inactive' && rec.stop(), maxMs);
+  return {
+    stop() {
+      clearTimeout(timer);
+      if (rec.state !== 'inactive') rec.stop();
+      return done;
+    },
+  };
 }

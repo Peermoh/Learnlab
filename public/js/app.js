@@ -2,7 +2,7 @@ import { TRACKS, ALL_ITEMS, TRICKY_PAIRS } from './data.js';
 import { getLevel, raiseLevel, resetProgress, progressOf } from './store.js';
 import {
   speak, hasHindiVoice, ttsAvailable,
-  canRecognize, listen, stopListening, scoreWord, verdict, recordClip,
+  canRecognize, listen, stopListening, scoreWord, verdict, startRecording,
 } from './speech.js';
 
 const $app = document.getElementById('app');
@@ -155,7 +155,13 @@ function renderTrack(id) {
 
 // ---------- Letter sheet (tap a letter, everything is right there) ----------
 
-let sheet = null; // { t, idx, state, result, error, clip }
+let sheet = null; // { t, idx, state, result, error, clip, recorder }
+let player = null;
+
+function setClip(sh, url) {
+  if (sh.clip) URL.revokeObjectURL(sh.clip);
+  sh.clip = url;
+}
 const $sheet = document.createElement('div');
 document.body.appendChild($sheet);
 
@@ -189,7 +195,11 @@ function drawSheet() {
     feedback = `<p class="note">Voice checking isn’t supported in this browser (try Chrome or Edge). Record yourself and compare with the native voice instead.</p>`;
   }
 
-  const micLabel = state === 'listening' ? (rec ? 'Listening… say the word' : 'Recording…') : rec ? 'Tap and say the word' : 'Tap to record yourself';
+  const micLabel =
+    state === 'recording' ? 'Recording… tap to stop'
+    : state === 'listening' ? 'Listening… say the word'
+    : rec ? 'Tap and say the word' : 'Tap to record yourself';
+  const busy = state !== 'idle';
 
   $sheet.innerHTML = `<div class="scrim" data-act="close"></div>
   <section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(item.roman)}">
@@ -219,11 +229,15 @@ function drawSheet() {
       </div>
 
       <div class="say-box">
-        <div class="mic-wrap"><button class="mic small ${state === 'listening' ? 'live' : ''}" data-act="${rec ? 'listen' : 'record'}" aria-label="${state === 'listening' ? 'Stop' : 'Say it'}">${state === 'listening' ? ICON.stop : ICON.mic}</button></div>
+        <div class="mic-wrap"><button class="mic small ${busy ? 'live' : ''}" data-act="${rec && state !== 'recording' ? 'listen' : 'record'}" aria-label="${busy ? 'Stop' : 'Say it'}">${busy ? ICON.stop : ICON.mic}</button></div>
         <p class="mic-hint">${micLabel}</p>
         ${feedback}
-        ${!rec && sheet.clip ? `<div class="actions"><button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>Play yours</button>
-          <button class="btn soft" data-act="rate" data-v="3">Nailed it</button><button class="btn soft" data-act="rate" data-v="2">Almost</button></div>` : ''}
+        ${sheet.clip || (rec && state === 'idle') ? `<div class="actions">
+          ${sheet.clip ? `<button class="play accent" data-act="clip"><span class="pi">${ICON.play}</span>Play my voice</button>` : ''}
+          ${rec ? `<button class="play" data-act="record"><span class="pi">${ICON.mic}</span>Record only</button>` : ''}
+          ${!rec && sheet.clip ? `<button class="btn soft" data-act="rate" data-v="3">Nailed it</button><button class="btn soft" data-act="rate" data-v="2">Almost</button>` : ''}
+        </div>` : ''}
+        ${state === 'recording' && rec ? `<div class="actions"><button class="play" data-act="record"><span class="pi">${ICON.stop}</span>Stop recording</button></div>` : ''}
       </div>
     </div>
   </section>`;
@@ -241,36 +255,61 @@ function mastered(item, level) {
 
 async function onListen() {
   if (sheet.state === 'listening') return stopListening();
-  const item = sheet.t.items[sheet.idx];
-  sheet.state = 'listening';
-  sheet.result = null;
-  sheet.error = '';
-  drawSheet();
+  if (sheet.state !== 'idle') return;
   const mine = sheet;
+  const item = mine.t.items[mine.idx];
+  mine.state = 'listening';
+  mine.result = null;
+  mine.error = '';
+  drawSheet();
+
+  // Record while recognising so the learner can replay their voice. Best effort:
+  // some phones let only one thing use the mic at a time.
+  let rec = null;
+  try { rec = await startRecording(); } catch { /* recording is optional */ }
+  let alts = null;
+  let err = null;
   try {
-    const alts = await listen();
+    alts = await listen();
+  } catch (e) {
+    if (e.message === 'audio-capture' && rec) {
+      await rec.stop();
+      rec = null;
+      try { alts = await listen(); } catch (e2) { err = e2; }
+    } else err = e;
+  }
+  if (rec) setClip(mine, await rec.stop());
+  if (alts) {
     mine.result = scoreWord(item.word.hi, alts);
     const v = verdict(mine.result.score);
     mastered(item, v === 'great' ? 3 : v === 'almost' ? 2 : 1);
-  } catch (e) {
-    mine.error = e.message in MIC_ERRORS ? MIC_ERRORS[e.message] : `Something went wrong (${e.message}).`;
+  } else {
+    mine.error = err.message in MIC_ERRORS ? MIC_ERRORS[err.message] : `Something went wrong (${err.message}).`;
   }
   mine.state = 'idle';
   if (sheet === mine) drawSheet();
 }
 
 async function onRecord() {
-  if (sheet.state === 'listening') return;
   const mine = sheet;
-  mine.state = 'listening';
-  drawSheet();
-  try {
-    mine.clip = await recordClip();
+  if (mine.state === 'recording') {
+    setClip(mine, await mine.recorder.stop());
+    mine.recorder = null;
+    mine.state = 'idle';
     raiseLevel(mine.t.items[mine.idx].id, 1);
+    if (sheet === mine) drawSheet();
+    return;
+  }
+  if (mine.state !== 'idle') return;
+  mine.error = '';
+  try {
+    mine.recorder = await startRecording();
+    mine.state = 'recording';
+    // auto-stop after the recorder's time limit
+    setTimeout(() => mine.state === 'recording' && onRecord(), 8100);
   } catch {
     mine.error = MIC_ERRORS['not-allowed'];
   }
-  mine.state = 'idle';
   if (sheet === mine) drawSheet();
 }
 
@@ -354,12 +393,17 @@ document.addEventListener('click', async (e) => {
     const i = Number(el.dataset.to);
     if (i < 0 || i >= sheet.t.items.length) return;
     stopListening();
+    sheet.recorder?.stop();
     history.replaceState(null, '', `#/${sheet.base}/${sheet.t.id}/${i}`);
-    sheet = { t: sheet.t, idx: i, base: sheet.base, state: 'idle', result: null, error: '', clip: null };
+    sheet = { t: sheet.t, idx: i, base: sheet.base, state: 'idle', result: null, error: '', clip: null, recorder: null };
     drawSheet();
   } else if (act === 'listen') onListen();
   else if (act === 'record') onRecord();
-  else if (act === 'clip') new Audio(sheet.clip).play();
+  else if (act === 'clip') {
+    player?.pause();
+    player = new Audio(sheet.clip);
+    player.play();
+  }
   else if (act === 'rate') {
     mastered(sheet.t.items[sheet.idx], Number(el.dataset.v));
     toast(el.dataset.v === '3' ? 'Nice work' : 'Keep going, you’ll get it');
@@ -389,7 +433,7 @@ function route() {
   if ((page === 'track' || page === 'map') && !Number.isNaN(idx)) {
     const t = trackOf(a);
     if (t && t.items[idx]) {
-      if (!sheet || sheet.t.id !== t.id || sheet.idx !== idx || sheet.base !== page) sheet = { t, idx, base: page, state: 'idle', result: null, error: '', clip: null };
+      if (!sheet || sheet.t.id !== t.id || sheet.idx !== idx || sheet.base !== page) sheet = { t, idx, base: page, state: 'idle', result: null, error: '', clip: null, recorder: null };
       drawSheet();
       return;
     }
