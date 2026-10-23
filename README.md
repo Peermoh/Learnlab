@@ -45,7 +45,15 @@ python tools/generate_audio.py --voice hi-IN-MadhurNeural --force   # male voice
 ```
 
 Then commit `public/audio/` and deploy. Re-run the script after adding words to `data.js`;
-it only creates the missing files. edge-tts uses Microsoft Edge's free online voices through an
+it only creates the missing files.
+
+If a letter sounds wrong (e.g. ई comes out like ए), listen to a few versions and pick one:
+
+```sh
+python tools/generate_audio.py --preview ई     # writes options to audio-preview/
+# put the best rate/text in tools/audio_overrides.json, then:
+python tools/generate_audio.py --only ई
+``` edge-tts uses Microsoft Edge's free online voices through an
 unofficial endpoint: fine for personal use, but use an official TTS service before a commercial launch.
 
 ## Practising a sound

@@ -7,6 +7,10 @@ plus public/audio/manifest.json, which tells the app which files exist.
     pip install edge-tts
     python tools/generate_audio.py                      # female voice (Swara)
     python tools/generate_audio.py --voice hi-IN-MadhurNeural --force   # male voice, redo all
+    python tools/generate_audio.py --preview ई      # hear options for one letter, then pick
+    python tools/generate_audio.py --only ई,ऊ        # redo just these after editing overrides
+
+Per-letter fixes live in tools/audio_overrides.json.
 
 edge-tts uses Microsoft Edge's free online voices (unofficial endpoint). Fine for a
 personal or learning project; switch to an official TTS service before a commercial launch.
@@ -15,6 +19,7 @@ import argparse
 import asyncio
 import json
 import re
+import time
 import unicodedata
 from pathlib import Path
 
@@ -23,9 +28,12 @@ import edge_tts
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "public" / "js" / "data.js"
 OUT = ROOT / "public" / "audio"
+OVERRIDES = Path(__file__).resolve().parent / "audio_overrides.json"
+PREVIEW = ROOT / "audio-preview"
 
-NORMAL_RATE = "-10%"
-SLOW_RATE = "-45%"
+WORD_RATE = "-10%"    # example words: natural speed
+LETTER_RATE = "-25%"  # a letter on its own: slower, or the voice clips it (ई sounds like ए)
+SLOW_RATE = "-50%"    # the "Slow" button
 
 
 def audio_key(text: str) -> str:
@@ -33,8 +41,15 @@ def audio_key(text: str) -> str:
     return "-".join(format(ord(c), "x") for c in unicodedata.normalize("NFC", text))
 
 
-def clips_from_data(source: str):
-    """Return [(key, text, rate)] for everything the app can say."""
+def load_overrides():
+    if not OVERRIDES.exists():
+        return {}
+    data = json.loads(OVERRIDES.read_text(encoding="utf-8"))
+    return {unicodedata.normalize("NFC", k): v for k, v in data.items() if not k.startswith("_")}
+
+
+def clips_from_data(source: str, overrides: dict):
+    """Return [(key, shown_text, spoken_text, rate)] for everything the app can say."""
     letters = re.findall(r"^\s*(?:vowel|c|m)\('[^']+',\s*'([^']+)'", source, re.M)
     words = re.findall(r"\bw\('([^']+)'", source)
     consonants = re.findall(r"^\s*c\('[^']+',\s*'([^']+)'", source, re.M)
@@ -42,37 +57,63 @@ def clips_from_data(source: str):
         raise SystemExit("Couldn't read letters/words from data.js. Has its format changed?")
 
     clips = {}
+
+    def add(text, rate, slow=False):
+        o = overrides.get(unicodedata.normalize("NFC", text), {})
+        spoken = o.get("text", text)
+        rate = o.get("slow_rate" if slow else "rate", rate)
+        clips[audio_key(text) + (".slow" if slow else "")] = (text, spoken, rate)
+
     for ch in letters:
-        clips[audio_key(ch)] = (ch, NORMAL_RATE)
-        clips[audio_key(ch) + ".slow"] = (ch, SLOW_RATE)  # the "Slow" button
+        add(ch, LETTER_RATE)
+        add(ch, SLOW_RATE, slow=True)  # the "Slow" button
     for word in words:
-        clips[audio_key(word)] = (word, NORMAL_RATE)
+        add(word, WORD_RATE)
     for ch in consonants:  # the Tricky sounds game plays consonant + आ (e.g. खा)
-        clips[audio_key(ch + "ा")] = (ch + "ा", NORMAL_RATE)
-    return [(k, t, r) for k, (t, r) in clips.items()]
+        add(ch + "ा", LETTER_RATE)
+    return [(k, shown, spoken, r) for k, (shown, spoken, r) in clips.items()]
 
 
-async def generate(voice: str, force: bool, proxy: str | None):
+async def synth(text, voice, rate, path, proxy):
+    for attempt in range(3):
+        try:
+            await edge_tts.Communicate(text, voice, rate=rate, proxy=proxy).save(str(path))
+            return
+        except Exception as e:  # network hiccups: retry a couple of times
+            if attempt == 2:
+                raise SystemExit(f"Failed on {text!r}: {e}")
+            await asyncio.sleep(2)
+
+
+async def preview(text, voice, proxy):
+    """Write a few versions of one letter so you can listen and choose."""
+    PREVIEW.mkdir(exist_ok=True)
+    options = [(r, text) for r in ("-10%", "-25%", "-35%", "-45%")] + [("-25%", text + "।"), ("-25%", text + " " + text)]
+    print(f"Listen to the files in {PREVIEW}:")
+    for i, (rate, spoken) in enumerate(options, 1):
+        path = PREVIEW / f"{audio_key(text)}_option{i}.mp3"
+        await synth(spoken, voice, rate, path, proxy)
+        print(f"  option{i}: rate {rate:>5}  text {spoken!r}")
+    print('\nPut the best one in tools/audio_overrides.json, e.g.  "%s": { "rate": "-35%%" }' % text)
+    print(f"then run:  python tools/generate_audio.py --only {text}")
+
+
+async def generate(voice: str, force: bool, only: set, proxy: str | None):
     OUT.mkdir(parents=True, exist_ok=True)
-    clips = clips_from_data(DATA.read_text(encoding="utf-8"))
+    clips = clips_from_data(DATA.read_text(encoding="utf-8"), load_overrides())
     made = skipped = 0
-    for key, text, rate in clips:
+    for key, shown, spoken, rate in clips:
         path = OUT / f"{key}.mp3"
-        if path.exists() and path.stat().st_size > 0 and not force:
+        wanted = (unicodedata.normalize("NFC", shown) in only) if only else force
+        if path.exists() and path.stat().st_size > 0 and not wanted:
             skipped += 1
             continue
-        for attempt in range(3):
-            try:
-                await edge_tts.Communicate(text, voice, rate=rate, proxy=proxy).save(str(path))
-                break
-            except Exception as e:  # network hiccups: retry a couple of times
-                if attempt == 2:
-                    raise SystemExit(f"Failed on {text!r}: {e}")
-                await asyncio.sleep(2)
+        await synth(spoken, voice, rate, path, proxy)
         made += 1
-        print(f"  {text}  ({'slow' if key.endswith('.slow') else 'normal'})")
+        print(f"  {shown}  ({'slow' if key.endswith('.slow') else 'normal'}, {rate})")
 
-    manifest = {"voice": voice, "files": sorted(k for k, _, _ in clips)}
+    # version changes on every run so phones fetch the new files instead of cached ones
+    manifest = {"voice": voice, "version": int(time.time()), "files": sorted(k for k, *_ in clips)}
     (OUT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\nDone: {made} generated, {skipped} already there, {len(clips)} total in {OUT}")
 
@@ -81,6 +122,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--voice", default="hi-IN-SwaraNeural", help="hi-IN-SwaraNeural (female) or hi-IN-MadhurNeural (male)")
     ap.add_argument("--force", action="store_true", help="regenerate files that already exist")
+    ap.add_argument("--only", help="comma-separated letters/words to regenerate, e.g. ई,ऊ")
+    ap.add_argument("--preview", metavar="LETTER", help="write several versions of one letter to audio-preview/")
     ap.add_argument("--proxy", help="HTTP proxy URL, if your network needs one")
     args = ap.parse_args()
-    asyncio.run(generate(args.voice, args.force, args.proxy))
+    if args.preview:
+        asyncio.run(preview(unicodedata.normalize("NFC", args.preview), args.voice, args.proxy))
+    else:
+        only = {unicodedata.normalize("NFC", x.strip()) for x in args.only.split(",")} if args.only else set()
+        asyncio.run(generate(args.voice, args.force, only, args.proxy))

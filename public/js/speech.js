@@ -4,9 +4,13 @@
 // ---------- Native audio files (made by tools/generate_audio.py) ----------
 
 let audioFiles = new Set();
+let audioVersion = '';
 const ready = fetch('audio/manifest.json', { cache: 'no-cache' })
   .then((r) => (r.ok ? r.json() : { files: [] }))
-  .then((m) => { audioFiles = new Set(m.files || []); })
+  .then((m) => {
+    audioFiles = new Set(m.files || []);
+    audioVersion = m.version ? `?v=${m.version}` : '';
+  })
   .catch(() => {});
 
 /** File name for a piece of text. Must match audio_key() in tools/generate_audio.py. */
@@ -18,7 +22,7 @@ let current = null;
 
 function playFile(key) {
   return new Promise((resolve) => {
-    const a = new Audio(`audio/${key}.mp3`);
+    const a = new Audio(`audio/${key}.mp3${audioVersion}`);
     current = a;
     a.onended = () => resolve(true);
     a.onerror = () => resolve(false);

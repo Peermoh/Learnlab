@@ -1,0 +1,5 @@
+{
+  "_help": "Fix how a letter or word is spoken. Key = the letter/word as in data.js. 'rate' sets the Hear speed and 'slow_rate' the Slow speed (e.g. \"-40%\"); 'text' replaces what the voice is given to read (the app still shows the original). Find good values with: python tools/generate_audio.py --preview ई",
+  "ई": { "rate": "-35%" },
+  "ऊ": { "rate": "-35%" }
+}
