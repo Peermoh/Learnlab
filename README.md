@@ -35,26 +35,27 @@ Progress is saved in `localStorage`; there are no accounts yet.
 ## Native audio
 
 The **Hear**, **Slow** and **Native** buttons play MP3s from `public/audio/` when they exist,
-and fall back to the browser's own Hindi voice otherwise. Generate them once (about 200 short
-clips, roughly a minute):
+and fall back to the browser's own Hindi voice otherwise. The files are made by
+`tools/generate_audio.py` (Microsoft's neural Hindi voices via `edge-tts`).
+
+**No local setup needed:** the *Generate audio* GitHub Action runs the script in GitHub's cloud
+and commits the files whenever `data.js`, the script or `tools/audio_overrides.json` change;
+Cloudflare then deploys them. To change voice or redo everything, open the repo's
+**Actions → Generate audio → Run workflow**. Only clips whose text, speed or voice changed are
+regenerated.
+
+If a letter sounds wrong, change its speed (or the text the voice reads) in
+`tools/audio_overrides.json`, e.g. `"ई": { "rate": "-45%" }`, and commit; the Action redoes just
+that letter. Running locally also works:
 
 ```sh
 pip install edge-tts
-python tools/generate_audio.py                                   # female voice (Swara)
-python tools/generate_audio.py --voice hi-IN-MadhurNeural --force   # male voice instead
+python tools/generate_audio.py              # only missing/changed clips
+python tools/generate_audio.py --preview ई   # several versions in audio-preview/ to compare
 ```
 
-Then commit `public/audio/` and deploy. Re-run the script after adding words to `data.js`;
-it only creates the missing files.
-
-If a letter sounds wrong (e.g. ई comes out like ए), listen to a few versions and pick one:
-
-```sh
-python tools/generate_audio.py --preview ई     # writes options to audio-preview/
-# put the best rate/text in tools/audio_overrides.json, then:
-python tools/generate_audio.py --only ई
-``` edge-tts uses Microsoft Edge's free online voices through an
-unofficial endpoint: fine for personal use, but use an official TTS service before a commercial launch.
+edge-tts uses Microsoft Edge's free online voices through an unofficial endpoint: fine for
+personal use, but use an official TTS service before a commercial launch.
 
 ## Practising a sound
 

@@ -5,7 +5,7 @@ Reads the lesson content from public/js/data.js and writes MP3s to public/audio/
 plus public/audio/manifest.json, which tells the app which files exist.
 
     pip install edge-tts
-    python tools/generate_audio.py                      # female voice (Swara)
+    python tools/generate_audio.py                      # female voice (Swara); only changed clips
     python tools/generate_audio.py --voice hi-IN-MadhurNeural --force   # male voice, redo all
     python tools/generate_audio.py --preview ई      # hear options for one letter, then pick
     python tools/generate_audio.py --only ई,ऊ        # redo just these after editing overrides
@@ -34,6 +34,7 @@ PREVIEW = ROOT / "audio-preview"
 WORD_RATE = "-10%"    # example words: natural speed
 LETTER_RATE = "-25%"  # a letter on its own: slower, or the voice clips it (ई sounds like ए)
 SLOW_RATE = "-50%"    # the "Slow" button
+DEFAULT_VOICE = "hi-IN-SwaraNeural"
 
 
 def audio_key(text: str) -> str:
@@ -98,36 +99,49 @@ async def preview(text, voice, proxy):
     print(f"then run:  python tools/generate_audio.py --only {text}")
 
 
-async def generate(voice: str, force: bool, only: set, proxy: str | None):
+async def generate(voice: str | None, force: bool, only: set, proxy: str | None):
     OUT.mkdir(parents=True, exist_ok=True)
     clips = clips_from_data(DATA.read_text(encoding="utf-8"), load_overrides())
+    manifest_path = OUT / "manifest.json"
+    old = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+    voice = voice or old.get("voice") or DEFAULT_VOICE  # keep the current voice unless asked to change
+    old_sigs = old.get("clips", {})
+    sigs = {}
     made = skipped = 0
     for key, shown, spoken, rate in clips:
         path = OUT / f"{key}.mp3"
-        wanted = (unicodedata.normalize("NFC", shown) in only) if only else force
-        if path.exists() and path.stat().st_size > 0 and not wanted:
+        sig = f"{voice}|{rate}|{spoken}"  # if any of these change, the clip is regenerated
+        sigs[key] = sig
+        if only:
+            wanted = unicodedata.normalize("NFC", shown) in only
+        else:
+            wanted = force or old_sigs.get(key) != sig or not (path.exists() and path.stat().st_size > 0)
+        if not wanted:
             skipped += 1
             continue
         await synth(spoken, voice, rate, path, proxy)
         made += 1
         print(f"  {shown}  ({'slow' if key.endswith('.slow') else 'normal'}, {rate})")
 
-    # version changes on every run so phones fetch the new files instead of cached ones
-    manifest = {"voice": voice, "version": int(time.time()), "files": sorted(k for k, *_ in clips)}
-    (OUT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"\nDone: {made} generated, {skipped} already there, {len(clips)} total in {OUT}")
+    if made == 0 and old.get("files") == sorted(sigs):
+        print(f"Nothing to do: all {len(clips)} clips are up to date.")
+        return
+    # version changes on every update so phones fetch the new files instead of cached ones
+    manifest = {"voice": voice, "version": int(time.time()), "files": sorted(sigs), "clips": sigs}
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"\nDone: {made} generated, {skipped} unchanged, {len(clips)} total in {OUT}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--voice", default="hi-IN-SwaraNeural", help="hi-IN-SwaraNeural (female) or hi-IN-MadhurNeural (male)")
-    ap.add_argument("--force", action="store_true", help="regenerate files that already exist")
+    ap.add_argument("--voice", help="hi-IN-SwaraNeural (female, default) or hi-IN-MadhurNeural (male); omit to keep the current one")
+    ap.add_argument("--force", action="store_true", help="regenerate every clip, even unchanged ones")
     ap.add_argument("--only", help="comma-separated letters/words to regenerate, e.g. ई,ऊ")
     ap.add_argument("--preview", metavar="LETTER", help="write several versions of one letter to audio-preview/")
     ap.add_argument("--proxy", help="HTTP proxy URL, if your network needs one")
     args = ap.parse_args()
     if args.preview:
-        asyncio.run(preview(unicodedata.normalize("NFC", args.preview), args.voice, args.proxy))
+        asyncio.run(preview(unicodedata.normalize("NFC", args.preview), args.voice or DEFAULT_VOICE, args.proxy))
     else:
         only = {unicodedata.normalize("NFC", x.strip()) for x in args.only.split(",")} if args.only else set()
         asyncio.run(generate(args.voice, args.force, only, args.proxy))

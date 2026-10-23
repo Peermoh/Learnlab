@@ -1,0 +1,53 @@
+# Generates the native Hindi audio in GitHub's cloud, so nobody has to run Python locally.
+# Runs by itself when lesson content or voice settings change, or by hand from the Actions tab.
+name: Generate audio
+
+on:
+  push:
+    paths:
+      - public/js/data.js
+      - tools/generate_audio.py
+      - tools/audio_overrides.json
+      - .github/workflows/generate-audio.yml
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: Voice
+        type: choice
+        options: [keep current, hi-IN-SwaraNeural, hi-IN-MadhurNeural]
+        default: keep current
+      redo_all:
+        description: Regenerate every clip (e.g. after changing voice)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: generate-audio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install edge-tts
+      - name: Generate
+        run: |
+          python tools/generate_audio.py \
+            ${{ inputs.voice && inputs.voice != 'keep current' && format('--voice {0}', inputs.voice) || '' }} \
+            ${{ inputs.redo_all && '--force' || '' }}
+      - name: Commit audio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/audio
+          if git diff --cached --quiet; then echo "Audio already up to date."; exit 0; fi
+          git commit -m "Update generated Hindi audio"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
