@@ -313,7 +313,7 @@ async function finishRecordedAttempt(mine) {
   const blob = await rec.stop();
   setClip(mine, blob);
   try {
-    const text = await transcribeCloud(blob);
+    const text = await transcribeCloud(blob, mine.t.items.map((x) => x.word.hi));
     if (text.trim()) finishAttempt(mine, item, text);
     else mine.error = MIC_ERRORS['no-speech'];
   } catch (e) {

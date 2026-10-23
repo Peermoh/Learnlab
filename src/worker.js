@@ -25,14 +25,16 @@ export default {
     if (body.length > MAX_BYTES) return json({ error: 'too-large' }, 413);
 
     const audio = toBase64(body);
+    // Vocabulary hint: the words in the learner's current lesson set. It nudges the model toward
+    // real course words without telling it which one the learner was asked to say.
+    const hint = (url.searchParams.get('p') || '').replace(/[^\u0900-\u097F, ]/g, '').slice(0, 400);
     const run = (extra) => env.AI.run('@cf/openai/whisper-large-v3-turbo', { audio, language: 'hi', task: 'transcribe', ...extra });
     try {
       let out;
       try {
-        // Options that reduce invented text on short clips. If the model rejects them, retry plainly.
-        out = await run({ vad_filter: true, condition_on_previous_text: false });
+        out = await run({ condition_on_previous_text: false, ...(hint ? { initial_prompt: hint } : {}) });
       } catch {
-        out = await run({});
+        out = await run({}); // the model rejected the options: retry plainly
       }
       return json({ text: (out && out.text ? String(out.text) : '').trim().slice(0, 200) });
     } catch (e) {

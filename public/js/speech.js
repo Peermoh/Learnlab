@@ -244,12 +244,13 @@ async function toWav16k(blob) {
 }
 
 /** Returns the transcript. Throws { code: 'unavailable' } if no scoring service exists here. */
-export async function transcribeCloud(blob) {
+export async function transcribeCloud(blob, hints = []) {
   const wav = await toWav16k(blob);
   if (!wav) throw Object.assign(new Error('silent'), { code: 'silent' });
   let res;
   try {
-    res = await fetch('/api/transcribe', { method: 'POST', body: wav, headers: { 'content-type': 'audio/wav' } });
+    const q = hints.length ? `?p=${encodeURIComponent(hints.join(', '))}` : '';
+    res = await fetch('/api/transcribe' + q, { method: 'POST', body: wav, headers: { 'content-type': 'audio/wav' } });
   } catch {
     throw Object.assign(new Error('network'), { code: 'network' });
   }
