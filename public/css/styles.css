@@ -15,7 +15,7 @@
   --shadow: 0 1px 2px rgba(42, 36, 56, 0.05), 0 12px 32px -12px rgba(91, 75, 219, 0.18);
   --radius: 22px;
   --dev: 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
-  --ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ui: 'Plus Jakarta Sans', 'Noto Sans Devanagari', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -251,6 +251,10 @@ h2 { font-size: 20px; letter-spacing: -0.02em; font-weight: 800; }
 .view { animation: rise 0.35s ease both; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* Touch screens keep :hover on the last tapped element, which left one button raised. */
+@media (hover: none) {
+  .iconbtn:hover, .btn:hover, .track:hover, .feature:hover, .tile:hover, .play:hover, .mic:hover, .choice:hover { transform: none; }
+}
 @media (max-width: 520px) {
   .app { padding: 16px 14px 88px; }
   .hero { padding: 24px 20px; }
@@ -271,8 +275,9 @@ h2 { font-size: 20px; letter-spacing: -0.02em; font-weight: 800; }
 .sheet-top .iconbtn[disabled] { opacity: 0.35; pointer-events: none; }
 .sheet-body { overflow-y: auto; padding: 4px 18px calc(28px + env(safe-area-inset-bottom)); }
 .sheet-letter { text-align: center; }
-.sheet-letter .big { font-family: var(--dev); font-size: clamp(104px, 26vw, 140px); font-weight: 600; line-height: 1.15; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; animation: pop 0.4s cubic-bezier(.2,1.4,.4,1); }
-.sheet-letter .roman { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin-top: -6px; }
+/* Box fits Devanagari marks (up to ~0.9em above the headline, ~0.28em below) with the baseline fixed for every letter. */
+.sheet-letter .big { font-family: var(--dev); font-size: clamp(104px, 26vw, 140px); font-weight: 600; line-height: 1.43; margin-bottom: -0.15em; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; animation: pop 0.4s cubic-bezier(.2,1.4,.4,1); }
+.sheet-letter .roman { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
 .sheet-letter .sound { color: var(--muted); font-size: 14.5px; }
 .say-box { margin-top: 10px; }
 .mic.small { width: 84px; height: 84px; }
