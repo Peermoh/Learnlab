@@ -30,6 +30,8 @@ const G4 = 'Teeth sounds · त वर्ग';
 const G5 = 'Lip sounds · प वर्ग';
 const G6 = 'Flowing sounds';
 const G7 = 'Hissing sounds';
+const G8 = 'Flapped sounds · ड़ ढ़';
+const G9 = 'Joined letters · संयुक्त व्यंजन';
 
 export const CONSONANTS = [
   c('c-ka', 'क', 'ka', '“k” in skate', 'No puff of air. Hold a tissue in front of your mouth, it should not move.', w('कमल', 'kamal', 'lotus'), G1),
@@ -71,6 +73,14 @@ export const CONSONANTS = [
   c('c-ssa', 'ष', 'ṣha', '“sh” with the tongue curled back', 'Curl your tongue slightly back. It is used mostly in Sanskrit words.', w('षट्कोण', 'shatkon', 'hexagon'), G7),
   c('c-sa', 'स', 'sa', '“s” in sun', 'Clean and sharp.', w('सेब', 'seb', 'apple'), G7),
   c('c-ha', 'ह', 'ha', '“h” in home', 'A light breath from the throat.', w('हाथी', 'haathi', 'elephant'), G7),
+
+  c('c-rra', 'ड़', 'ṛa', 'a flapped “r”, tongue curled back', 'Curl your tongue back and flick it forward once. It never starts a word.', w('पेड़', 'ped', 'tree'), G8),
+  c('c-rrha', 'ढ़', 'ṛha', 'flapped “r” with a breathy puff', 'The same flick as ड़, with a breath of air. It never starts a word.', w('पढ़ना', 'padhna', 'to read'), G8),
+
+  c('c-ksha', 'क्ष', 'ksha', '“ksh” as in rickshaw', 'क + ष joined: a quick k gliding straight into sh.', w('क्षत्रिय', 'kshatriya', 'warrior'), G9),
+  c('c-tra', 'त्र', 'tra', '“tr”, with a soft t', 'त + र joined: soft त (tongue on teeth) straight into a tapped र.', w('त्रिशूल', 'trishool', 'trident'), G9),
+  c('c-gya', 'ज्ञ', 'gya', '“gy” as in gyaan', 'Written ज + ञ, but in Hindi it is said “gya”.', w('ज्ञानी', 'gyaani', 'wise person'), G9),
+  c('c-shra', 'श्र', 'shra', '“shr” as in shrink', 'श + र joined: sh straight into a tapped र.', w('श्रमिक', 'shramik', 'worker'), G9),
 ];
 
 const m = (id, ch, roman, sound, tip, word, mark) => ({ id, ch, roman, sound, tip, word, mark, group: 'Vowel signs on क' });
@@ -86,11 +96,14 @@ export const MATRAS = [
   m('m-o', 'को', 'ko', '“coat” (pure)', 'ो is ा with a mark above it, and gives a pure o.', w('कोयल', 'koyal', 'koel bird'), 'ो'),
   m('m-au', 'कौ', 'kau', '“caw”', 'ौ is ा with two marks above it, and gives au.', w('कौआ', 'kauaa', 'crow'), 'ौ'),
   m('m-an', 'कं', 'kan', 'k + nasal hum', 'The dot ं above adds a nasal hum at the end.', w('कंधा', 'kandha', 'shoulder'), 'ं'),
+  m('m-ann', 'कँ', 'kã', 'k + a nasal “a”', 'The moon with a dot ँ makes the vowel itself nasal: air flows through the nose, with no separate n.', w('हँसना', 'hãsna', 'to laugh'), 'ँ'),
+  m('m-ri', 'कृ', 'kri', '“kri” in krill', 'ृ hangs under the letter and adds “ri”.', w('कृपा', 'kripa', 'kindness'), 'ृ'),
+  m('m-ah', 'कः', 'kah', 'k + a soft breath', 'The two dots ः add a soft breath “h” at the end. Mostly in Sanskrit words.', w('प्रातः', 'praatah', 'morning'), 'ः'),
 ];
 
 export const TRACKS = [
   { id: 'vowels', title: 'Vowels', hi: 'स्वर', blurb: 'The 13 sounds everything else is built on.', items: VOWELS, glyph: 'अ' },
-  { id: 'consonants', title: 'Consonants', hi: 'व्यंजन', blurb: 'Every consonant, grouped by where it is made.', items: CONSONANTS, glyph: 'क' },
+  { id: 'consonants', title: 'Consonants', hi: 'व्यंजन', blurb: 'All 39, grouped by where they are made, plus joined letters.', items: CONSONANTS, glyph: 'क' },
   { id: 'matras', title: 'Vowel signs', hi: 'मात्रा', blurb: 'See how vowels attach to letters to build syllables.', items: MATRAS, glyph: 'ा' },
 ];
 
@@ -113,4 +126,5 @@ export const TRICKY_PAIRS = [
   pair('c-da', 'c-dha', 'ध is breathy.'),
   pair('c-pa', 'c-pha', 'फ has the puff of air. It is not an f.'),
   pair('c-ba', 'c-bha', 'भ has the breathy release.'),
+  pair('c-dda', 'c-rra', 'ड is a hard stop. ड़ is a quick flick of the tongue.'),
 ];
