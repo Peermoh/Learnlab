@@ -929,9 +929,10 @@ function boot(){
   setPlaying(playing);wake();
   window.__seek=s=>{t=s;panes.forEach(p=>p.lastDraw=-1);render();};
   window.__ready=true;
-  requestAnimationFrame(n=>{last=n;frame(n);});
+  if(qs.has('capture')){document.getElementById('hud').style.display='none';chapEl.style.display='none';}
+  else requestAnimationFrame(n=>{last=n;frame(n);});
 }
-let pr=Math.min(devicePixelRatio||1,2);
+let pr=qs.has('capture')?1:Math.min(devicePixelRatio||1,2);
 boot();
 </script>
 </body>
