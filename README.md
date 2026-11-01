@@ -57,6 +57,18 @@ python tools/generate_audio.py --preview ई   # several versions in audio-previ
 edge-tts uses Microsoft Edge's free online voices through an unofficial endpoint: fine for
 personal use, but use an official TTS service before a commercial launch.
 
+### Using ElevenLabs instead
+
+1. In ElevenLabs, pick a voice that sounds good in Hindi and copy its **Voice ID**; create an API key.
+2. In GitHub: **Settings → Secrets and variables → Actions**: add secret `ELEVENLABS_API_KEY`,
+   and (Variables tab) variable `ELEVENLABS_VOICE_ID`.
+3. **Actions → Generate audio → Run workflow**, voice `elevenlabs`.
+
+Every clip is regenerated with model `eleven_multilingual_v2` (a full run is ~520 characters of
+credit), and later automatic runs keep using ElevenLabs. ElevenLabs' speed only goes down to
+0.7×, so **Slow** is less slow than with Edge. Switch back any time by running the workflow with a
+`hi-IN-…` voice.
+
 ## Practising a sound
 
 Tap a letter to open it. Hear the letter and the example word, record yourself

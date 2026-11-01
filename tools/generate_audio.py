@@ -10,20 +10,25 @@ plus public/audio/manifest.json, which tells the app which files exist.
     python tools/generate_audio.py --preview ई      # hear options for one letter, then pick
     python tools/generate_audio.py --only ई,ऊ        # redo just these after editing overrides
 
+    # ElevenLabs instead (needs ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID in the environment)
+    python tools/generate_audio.py --voice elevenlabs
+
 Per-letter fixes live in tools/audio_overrides.json.
 
-edge-tts uses Microsoft Edge's free online voices (unofficial endpoint). Fine for a
-personal or learning project; switch to an official TTS service before a commercial launch.
+Engines: edge-tts uses Microsoft Edge's free online voices (unofficial endpoint), fine for a
+personal or learning project. ElevenLabs is an official paid API (its free tier is
+non-commercial); the voice is stored as "elevenlabs:<model>:<voice_id>" in the manifest.
 """
 import argparse
 import asyncio
 import json
+import os
 import re
 import time
 import unicodedata
+import urllib.error
+import urllib.request
 from pathlib import Path
-
-import edge_tts
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "public" / "js" / "data.js"
@@ -35,6 +40,8 @@ WORD_RATE = "-10%"    # example words: natural speed
 LETTER_RATE = "-25%"  # a letter on its own: slower, or the voice clips it (ई sounds like ए)
 SLOW_RATE = "-50%"    # the "Slow" button
 DEFAULT_VOICE = "hi-IN-SwaraNeural"
+ELEVENLABS_MODEL = "eleven_multilingual_v2"  # speaks Hindi
+ELEVENLABS_URL = os.environ.get("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
 
 
 def audio_key(text: str) -> str:
@@ -75,11 +82,61 @@ def clips_from_data(source: str, overrides: dict):
     return [(k, shown, spoken, r) for k, (shown, spoken, r) in clips.items()]
 
 
+def resolve_voice(voice: str) -> str:
+    """Turn "elevenlabs" or "elevenlabs:<voice_id>" into "elevenlabs:<model>:<voice_id>"; Edge voices pass through."""
+    if voice != "elevenlabs" and not voice.startswith("elevenlabs:"):
+        return voice
+    parts = voice.split(":")[1:]
+    if len(parts) == 2:
+        return voice
+    voice_id = parts[0] if parts else os.environ.get("ELEVENLABS_VOICE_ID", "").strip()
+    if not voice_id:
+        raise SystemExit("ElevenLabs needs a voice: set ELEVENLABS_VOICE_ID (or use --voice elevenlabs:<voice_id>).")
+    model = os.environ.get("ELEVENLABS_MODEL", "").strip() or ELEVENLABS_MODEL
+    return f"elevenlabs:{model}:{voice_id}"
+
+
+def elevenlabs_speed(rate: str) -> float:
+    """Edge-style "-25%" -> ElevenLabs speed 0.75, kept inside the 0.7-1.2 range the API accepts."""
+    return round(min(1.2, max(0.7, 1 + int(rate.rstrip("%")) / 100)), 2)
+
+
+def elevenlabs_tts(text, voice, rate, path):
+    _, model, voice_id = voice.split(":")
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not key:
+        raise SystemExit("ElevenLabs needs ELEVENLABS_API_KEY in the environment (a GitHub secret in Actions).")
+    body = json.dumps({
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.6, "similarity_boost": 0.75, "speed": elevenlabs_speed(rate)},
+    }).encode()
+    req = urllib.request.Request(
+        f"{ELEVENLABS_URL}/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128",
+        data=body,
+        headers={"xi-api-key": key, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as res:
+            Path(path).write_bytes(res.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        if e.code in (401, 403):  # bad key or plan limits: retrying won't help
+            raise SystemExit(f"ElevenLabs refused the request ({e.code}): {detail}")
+        raise RuntimeError(f"HTTP {e.code}: {detail}")
+
+
 async def synth(text, voice, rate, path, proxy):
     for attempt in range(3):
         try:
-            await edge_tts.Communicate(text, voice, rate=rate, proxy=proxy).save(str(path))
+            if voice.startswith("elevenlabs:"):
+                await asyncio.to_thread(elevenlabs_tts, text, voice, rate, path)
+            else:
+                import edge_tts
+                await edge_tts.Communicate(text, voice, rate=rate, proxy=proxy).save(str(path))
             return
+        except SystemExit:
+            raise
         except Exception as e:  # network hiccups: retry a couple of times
             if attempt == 2:
                 raise SystemExit(f"Failed on {text!r}: {e}")
@@ -104,7 +161,7 @@ async def generate(voice: str | None, force: bool, only: set, proxy: str | None)
     clips = clips_from_data(DATA.read_text(encoding="utf-8"), load_overrides())
     manifest_path = OUT / "manifest.json"
     old = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
-    voice = voice or old.get("voice") or DEFAULT_VOICE  # keep the current voice unless asked to change
+    voice = resolve_voice(voice or old.get("voice") or DEFAULT_VOICE)  # keep the current voice unless asked to change
     old_sigs = old.get("clips", {})
     sigs = {}
     made = skipped = 0
@@ -134,14 +191,14 @@ async def generate(voice: str | None, force: bool, only: set, proxy: str | None)
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--voice", help="hi-IN-SwaraNeural (female, default) or hi-IN-MadhurNeural (male); omit to keep the current one")
+    ap.add_argument("--voice", help="hi-IN-SwaraNeural (female, default), hi-IN-MadhurNeural (male), or elevenlabs[:<voice_id>]; omit to keep the current one")
     ap.add_argument("--force", action="store_true", help="regenerate every clip, even unchanged ones")
     ap.add_argument("--only", help="comma-separated letters/words to regenerate, e.g. ई,ऊ")
     ap.add_argument("--preview", metavar="LETTER", help="write several versions of one letter to audio-preview/")
     ap.add_argument("--proxy", help="HTTP proxy URL, if your network needs one")
     args = ap.parse_args()
     if args.preview:
-        asyncio.run(preview(unicodedata.normalize("NFC", args.preview), args.voice or DEFAULT_VOICE, args.proxy))
+        asyncio.run(preview(unicodedata.normalize("NFC", args.preview), resolve_voice(args.voice or DEFAULT_VOICE), args.proxy))
     else:
         only = {unicodedata.normalize("NFC", x.strip()) for x in args.only.split(",")} if args.only else set()
         asyncio.run(generate(args.voice, args.force, only, args.proxy))

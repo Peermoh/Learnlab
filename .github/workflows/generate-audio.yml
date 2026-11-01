@@ -14,7 +14,7 @@ on:
       voice:
         description: Voice
         type: choice
-        options: [keep current, hi-IN-SwaraNeural, hi-IN-MadhurNeural]
+        options: [keep current, hi-IN-SwaraNeural, hi-IN-MadhurNeural, elevenlabs]
         default: keep current
       redo_all:
         description: Regenerate every clip (e.g. after changing voice)
@@ -38,6 +38,10 @@ jobs:
           python-version: '3.12'
       - run: pip install edge-tts
       - name: Generate
+        env:
+          # Only used for the ElevenLabs voice. Set them in Settings → Secrets and variables → Actions.
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID }}
         run: |
           python tools/generate_audio.py \
             ${{ inputs.voice && inputs.voice != 'keep current' && format('--voice {0}', inputs.voice) || '' }} \
