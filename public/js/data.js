@@ -128,3 +128,28 @@ export const TRICKY_PAIRS = [
   pair('c-ba', 'c-bha', 'भ has the breathy release.'),
   pair('c-dda', 'c-rra', 'ड is a hard stop. ड़ is a quick flick of the tongue.'),
 ];
+
+// बारहखड़ी (barakhadi): every consonant with every vowel sign, क का कि की कु कू …
+// Keep one [sign, roman ending] pair per line: tools/generate_audio.py reads this list too.
+export const BARAKHADI_SIGNS = [
+  ['', 'a'],
+  ['ा', 'aa'],
+  ['ि', 'i'],
+  ['ी', 'ee'],
+  ['ु', 'u'],
+  ['ू', 'oo'],
+  ['े', 'e'],
+  ['ै', 'ai'],
+  ['ो', 'o'],
+  ['ौ', 'au'],
+  ['ं', 'an'],
+  ['ः', 'ah'],
+];
+
+// Almost never written with vowel signs, so standard charts leave them out (also read by the generator).
+export const BARAKHADI_SKIP = ['c-nga', 'c-nya', 'c-rra', 'c-rrha'];
+
+export const BARAKHADI = CONSONANTS.filter((c) => !BARAKHADI_SKIP.includes(c.id)).map((c) => {
+  const stem = c.roman.replace(/a$/, ''); // "kha" → "kh", then add each vowel's ending
+  return { ...c, syllables: BARAKHADI_SIGNS.map(([sign, end]) => ({ text: c.ch + sign, roman: stem + end })) };
+});

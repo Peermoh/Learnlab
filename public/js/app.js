@@ -1,6 +1,6 @@
-import { TRACKS, ALL_ITEMS, TRICKY_PAIRS } from './data.js';
+import { TRACKS, ALL_ITEMS, TRICKY_PAIRS, BARAKHADI } from './data.js';
 import { getLevel, raiseLevel, resetProgress, progressOf } from './store.js';
-import { speak, hasHindiVoice, ttsAvailable, startRecording } from './speech.js';
+import { speak, stopSpeaking, hasHindiVoice, ttsAvailable, startRecording } from './speech.js';
 import { watchForUpdates, checkNow } from './update.js';
 
 const $app = document.getElementById('app');
@@ -93,7 +93,7 @@ function renderHome() {
     <section class="hero">
       <div class="eyebrow" style="color:rgba(255,255,255,.8)">Hindi · Basic</div>
       <h1 style="margin-top:8px">Learn Hindi<br/>by saying it out loud.</h1>
-      <p>See a letter, hear it, say it, and get feedback you can act on.</p>
+      <p>See a letter, hear a native voice, say it yourself and compare.</p>
       <div class="row">
         <a class="btn light" href="${lessonHref(nxt)}">${started ? 'Continue' : 'Start learning'} ${ICON.next}</a>
         <div style="display:flex;align-items:center;gap:12px">
@@ -102,6 +102,12 @@ function renderHome() {
         </div>
       </div>
     </section>
+
+    <a class="card feature feature-hero" href="#/barakhadi">
+      <span class="ico">का</span>
+      <div><h3>बारहखड़ी · All sounds in one page</h3><p>क का कि की कु कू … Tap any sound to hear it.</p></div>
+      <span class="go">${ICON.next}</span>
+    </a>
 
     <div class="levels" role="tablist" aria-label="Levels">
       <span class="pill on" role="tab" aria-selected="true">Basic</span>
@@ -268,6 +274,59 @@ async function onRecord() {
   if (sheet === mine) drawSheet();
 }
 
+// ---------- बारहखड़ी: every consonant with every vowel sign, on one page ----------
+
+let bkRun = 0; // bumped to cancel "Play all"
+let bkCurrent = null; // the consonant on screen
+let bkAllRun = 0; // the "Play all" run that owns the button
+
+function renderBarakhadi(id, animate) {
+  const i = Math.max(0, BARAKHADI.findIndex((c) => c.id === id));
+  const c = (bkCurrent = BARAKHADI[i]);
+  const prev = BARAKHADI[i - 1];
+  const next = BARAKHADI[i + 1];
+  const step = (x, icon, label) =>
+    `<button class="iconbtn" data-act="bk-pick" data-id="${x ? x.id : ''}" aria-label="${label}" ${x ? '' : 'disabled'}>${icon}</button>`;
+  $app.innerHTML = `<div class="${animate ? 'view' : ''}">
+    ${topbar(back('#/', 'बारहखड़ी', 'Every letter with every vowel sign'))}
+    <div class="chips" aria-label="Choose a letter">
+      ${BARAKHADI.map((x) => `<button class="chip ${x.id === c.id ? 'on' : ''}" data-act="bk-pick" data-id="${x.id}" aria-pressed="${x.id === c.id}" aria-label="${esc(x.roman)}">${x.ch}</button>`).join('')}
+    </div>
+    <section class="card bk-head">
+      ${step(prev, ICON.back, 'Previous letter')}
+      <div class="bk-title"><span class="dev">${c.ch}</span><span>${esc(c.roman)} · sounds like ${esc(c.sound)}</span></div>
+      ${step(next, ICON.next, 'Next letter')}
+    </section>
+    <div class="actions"><button class="btn primary" data-act="bk-all">${ICON.play} Play all</button></div>
+    <div class="bk-grid">
+      ${c.syllables.map((x) => `<button class="bk-cell" data-act="bk-say" data-text="${esc(x.text)}" aria-label="${esc(x.roman)}"><span class="ch">${x.text}</span><span class="rm">${esc(x.roman)}</span></button>`).join('')}
+    </div>
+    ${voiceNote()}
+  </div>`;
+}
+
+async function sayCell(cell) {
+  cell.classList.add('playing');
+  await speak(cell.dataset.text);
+  cell.classList.remove('playing');
+}
+
+async function playAll(btn) {
+  const run = ++bkRun;
+  bkAllRun = run;
+  btn.innerHTML = `${ICON.stop} Stop`;
+  btn.dataset.act = 'bk-stop';
+  for (const cell of document.querySelectorAll('.bk-cell')) {
+    if (run !== bkRun) break; // a tap, Stop or another letter interrupted us
+    await sayCell(cell);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  if (bkAllRun === run) { // reset the button unless a newer "Play all" now owns it
+    btn.innerHTML = `${ICON.play} Play all`;
+    btn.dataset.act = 'bk-all';
+  }
+}
+
 // ---------- Mastery map ----------
 
 function renderMap() {
@@ -339,6 +398,20 @@ document.addEventListener('click', async (e) => {
     await speak(el.dataset.text, { rate: Number(el.dataset.rate) || 0.85 });
     el.classList.remove('playing');
     if (sheet) raiseLevel(sheet.t.items[sheet.idx].id, 1);
+  } else if (act === 'bk-say') {
+    bkRun++;
+    raiseLevel(bkCurrent.id, 1);
+    sayCell(el);
+  } else if (act === 'bk-all') {
+    playAll(el);
+  } else if (act === 'bk-stop') {
+    bkRun++;
+    stopSpeaking();
+  } else if (act === 'bk-pick') {
+    bkRun++;
+    stopSpeaking();
+    history.replaceState(null, '', `#/barakhadi/${el.dataset.id}`);
+    renderBarakhadi(el.dataset.id, false);
   } else if (act === 'map-toggle') {
     location.hash = location.hash.startsWith('#/map') ? lastPage : '#/map';
   } else if (act === 'check-update') {
@@ -390,9 +463,11 @@ function route() {
   const [page, a, b] = location.hash.replace(/^#\/?/, '').split('/');
   if (page !== 'tricky') quiz = null;
   const idx = b === undefined ? NaN : Number(b);
-  if (page !== 'map') lastPage = page === 'track' ? `#/track/${a}` : page === 'tricky' ? '#/tricky' : '#/';
+  bkRun++;
+  if (page !== 'map') lastPage = page === 'track' ? `#/track/${a}` : page === 'tricky' ? '#/tricky' : page === 'barakhadi' ? location.hash : '#/';
   if (page === 'track') renderTrack(a);
   else if (page === 'map') renderMap();
+  else if (page === 'barakhadi') renderBarakhadi(a, true);
   else if (page === 'tricky') renderTricky();
   else renderHome();
   if ((page === 'track' || page === 'map') && !Number.isNaN(idx)) {

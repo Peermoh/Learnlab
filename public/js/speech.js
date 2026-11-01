@@ -5,28 +5,36 @@
 
 let audioFiles = new Set();
 let audioVersion = '';
+let manifestLoaded = false; // until it is, assume the native audio will be there
 const ready = fetch('audio/manifest.json', { cache: 'no-cache' })
   .then((r) => (r.ok ? r.json() : { files: [] }))
   .then((m) => {
     audioFiles = new Set(m.files || []);
     audioVersion = m.version ? `?v=${m.version}` : '';
   })
-  .catch(() => {});
+  .catch(() => {})
+  .finally(() => { manifestLoaded = true; });
 
 /** File name for a piece of text. Must match audio_key() in tools/generate_audio.py. */
 const audioKey = (text) => [...text.normalize('NFC')].map((c) => c.codePointAt(0).toString(16)).join('-');
 
 export const hasAudioFiles = () => audioFiles.size > 0;
 
-let current = null;
+let current = null; // { audio, finish } for the clip playing now
+let playId = 0; // bumped by stopSpeaking(), so an interrupted speak() knows it was stopped
 
+/** Resolves 'ended', 'error' or 'stopped' (pause() fires no 'ended', so stopping resolves it too). */
 function playFile(key) {
   return new Promise((resolve) => {
-    const a = new Audio(`audio/${key}.mp3${audioVersion}`);
-    current = a;
-    a.onended = () => resolve(true);
-    a.onerror = () => resolve(false);
-    a.play().catch(() => resolve(false));
+    const audio = new Audio(`audio/${key}.mp3${audioVersion}`);
+    const finish = (how) => {
+      if (current && current.audio === audio) current = null;
+      resolve(how);
+    };
+    current = { audio, finish };
+    audio.onended = () => finish('ended');
+    audio.onerror = () => finish('error');
+    audio.play().catch(() => finish('error'));
   });
 }
 
@@ -48,7 +56,7 @@ const hindiVoice = () =>
   voices.find((v) => v.lang.toLowerCase().startsWith('hi'));
 
 export const ttsAvailable = () => hasTTS || hasAudioFiles();
-export const hasHindiVoice = () => hasAudioFiles() || !!hindiVoice();
+export const hasHindiVoice = () => !manifestLoaded || hasAudioFiles() || !!hindiVoice();
 
 function speakTTS(text, rate) {
   return new Promise((resolve) => {
@@ -65,7 +73,11 @@ function speakTTS(text, rate) {
 }
 
 export function stopSpeaking() {
-  if (current) current.pause();
+  playId++;
+  if (current) {
+    current.audio.pause();
+    current.finish('stopped');
+  }
   if (hasTTS) speechSynthesis.cancel();
 }
 
@@ -75,11 +87,17 @@ export function stopSpeaking() {
  */
 export async function speak(text, { rate = 0.85 } = {}) {
   stopSpeaking();
+  const id = playId;
   await ready;
   const key = audioKey(text);
-  const slow = rate < 0.6;
-  if (slow && audioFiles.has(`${key}.slow`) && (await playFile(`${key}.slow`))) return true;
-  if (audioFiles.has(key) && (await playFile(key))) return true;
+  const files = [rate < 0.6 && `${key}.slow`, key].filter((k) => k && audioFiles.has(k));
+  for (const k of files) {
+    if (id !== playId) return false; // stopped while waiting
+    const how = await playFile(k);
+    if (how === 'ended') return true;
+    if (how === 'stopped') return false; // don't fall back to the browser voice after a stop
+  }
+  if (id !== playId) return false;
   return speakTTS(text, rate);
 }
 

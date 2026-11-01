@@ -60,9 +60,13 @@ def clips_from_data(source: str, overrides: dict):
     """Return [(key, shown_text, spoken_text, rate)] for everything the app can say."""
     letters = re.findall(r"^\s*(?:vowel|c|m)\('[^']+',\s*'([^']+)'", source, re.M)
     words = re.findall(r"\bw\('([^']+)'", source)
-    consonants = re.findall(r"^\s*c\('[^']+',\s*'([^']+)'", source, re.M)
-    if not letters or not words:
-        raise SystemExit("Couldn't read letters/words from data.js. Has its format changed?")
+    consonants = re.findall(r"^\s*c\('([^']+)',\s*'([^']+)'", source, re.M)  # (id, letter)
+    signs_block = re.search(r"BARAKHADI_SIGNS = \[(.*?)\n\];", source, re.S)
+    skip_block = re.search(r"BARAKHADI_SKIP = \[([^\]]*)\]", source)
+    if not letters or not words or not signs_block or not skip_block:
+        raise SystemExit("Couldn't read letters/words/barakhadi from data.js. Has its format changed?")
+    signs = re.findall(r"\['([^']*)',\s*'[^']+'\]", signs_block.group(1))
+    skip = set(re.findall(r"'([^']+)'", skip_block.group(1)))
 
     clips = {}
 
@@ -77,8 +81,12 @@ def clips_from_data(source: str, overrides: dict):
         add(ch, SLOW_RATE, slow=True)  # the "Slow" button
     for word in words:
         add(word, WORD_RATE)
-    for ch in consonants:  # the Tricky sounds game plays consonant + आ (e.g. खा)
+    for _, ch in consonants:  # the Tricky sounds game plays consonant + आ (e.g. खा)
         add(ch + "ा", LETTER_RATE)
+    for cid, ch in consonants:  # the बारहखड़ी chart: every consonant with every vowel sign
+        if cid not in skip:
+            for sign in signs:
+                add(ch + sign, LETTER_RATE)
     return [(k, shown, spoken, r) for k, (shown, spoken, r) in clips.items()]
 
 
