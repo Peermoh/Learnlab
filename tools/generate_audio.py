@@ -38,6 +38,9 @@ PREVIEW = ROOT / "audio-preview"
 
 WORD_RATE = "-10%"    # example words: natural speed
 LETTER_RATE = "-25%"  # a letter on its own: slower, or the voice clips it (ई sounds like ए)
+SHORT_RATE = "-10%"   # ...but slowing a SHORT vowel stretches it (कि sounded like की), so those stay near normal
+SHORT_VOWELS = {"अ", "इ", "उ", "ऋ"}
+SHORT_SIGNS = {"\u093F", "\u0941", "\u0943"}  # ि ु ृ
 SLOW_RATE = "-50%"    # the "Slow" button
 DEFAULT_VOICE = "hi-IN-SwaraNeural"
 ELEVENLABS_MODEL = "eleven_multilingual_v2"  # speaks Hindi
@@ -54,6 +57,15 @@ def load_overrides():
         return {}
     data = json.loads(OVERRIDES.read_text(encoding="utf-8"))
     return {unicodedata.normalize("NFC", k): v for k, v in data.items() if not k.startswith("_")}
+
+
+def letter_rate(text: str) -> str:
+    """Speed for a letter or syllable said on its own: near normal for short vowels, slower for long ones."""
+    last = text[-1]
+    ends_in_consonant = "\u0915" <= last <= "\u0939" or last == "\u093C"  # क..ह (or nukta, as in ड़): inherent short a
+    if text in SHORT_VOWELS or last in SHORT_SIGNS or ends_in_consonant:
+        return SHORT_RATE
+    return LETTER_RATE
 
 
 def clips_from_data(source: str, overrides: dict):
@@ -77,7 +89,7 @@ def clips_from_data(source: str, overrides: dict):
         clips[audio_key(text) + (".slow" if slow else "")] = (text, spoken, rate)
 
     for ch in letters:
-        add(ch, LETTER_RATE)
+        add(ch, letter_rate(ch))
         add(ch, SLOW_RATE, slow=True)  # the "Slow" button
     for word in words:
         add(word, WORD_RATE)
@@ -86,7 +98,7 @@ def clips_from_data(source: str, overrides: dict):
     for cid, ch in consonants:  # the बारहखड़ी chart: every consonant with every vowel sign
         if cid not in skip:
             for sign in signs:
-                add(ch + sign, LETTER_RATE)
+                add(ch + sign, letter_rate(ch + sign))
     return [(k, shown, spoken, r) for k, (shown, spoken, r) in clips.items()]
 
 
