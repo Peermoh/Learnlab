@@ -9,7 +9,7 @@ export const VOWELS = [
   vowel('v-a', 'अ', 'a', '“a” in about', 'Relax your mouth and keep it short and soft, like a lazy “uh”.', w('अनार', 'anaar', 'pomegranate'), 'Short & long vowels'),
   vowel('v-aa', 'आ', 'aa', '“a” in father', 'Open wide and hold the sound for twice as long as अ.', w('आम', 'aam', 'mango'), 'Short & long vowels'),
   vowel('v-i', 'इ', 'i', '“i” in sit', 'Short and relaxed, with your lips slightly spread.', w('इमली', 'imli', 'tamarind'), 'Short & long vowels'),
-  vowel('v-ee', 'ई', 'ee', '“ee” in feet', 'Smile and hold it longer than इ.', w('ईंट', 'eent', 'brick'), 'Short & long vowels'),
+  vowel('v-ee', 'ई', 'ee', '“ee” in feet', 'Smile and hold it longer than इ.', w('ईद', 'eed', 'Eid (festival)'), 'Short & long vowels'),
   vowel('v-u', 'उ', 'u', '“u” in put', 'Round your lips a little and keep it short.', w('उल्लू', 'ullu', 'owl'), 'Short & long vowels'),
   vowel('v-oo', 'ऊ', 'oo', '“oo” in food', 'Round your lips tightly and hold it long.', w('ऊँट', 'oont', 'camel'), 'Short & long vowels'),
   vowel('v-ri', 'ऋ', 'ri', '“ri” in rip', 'Say a quick “ri”. In Hindi it is mostly found in Sanskrit words.', w('ऋषि', 'rishi', 'sage'), 'Short & long vowels'),

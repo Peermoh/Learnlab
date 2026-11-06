@@ -1,6 +1,6 @@
 {
  "voice": "hi-IN-SwaraNeural",
- "version": 1794000003,
+ "version": 1794000075,
  "files": [
   "905",
   "905-902",
@@ -17,7 +17,7 @@
   "907-92e-932-940",
   "907.slow",
   "908",
-  "908-902-91f",
+  "908-926",
   "908.slow",
   "909",
   "909-932-94d-932-942",
@@ -710,7 +710,7 @@
   "905-928-93e-930": "hi-IN-SwaraNeural|-10%|अनार",
   "906-92e": "hi-IN-SwaraNeural|-10%|आम",
   "907-92e-932-940": "hi-IN-SwaraNeural|-10%|इमली",
-  "908-902-91f": "hi-IN-SwaraNeural|-10%|ईंट",
+  "908-926": "elevenlabs:eleven_multilingual_v2:OtEfb2LVzIE45wdYe54M|-10%|ईद",
   "909-932-94d-932-942": "hi-IN-SwaraNeural|-10%|उल्लू",
   "90a-901-91f": "hi-IN-SwaraNeural|-10%|ऊँट",
   "90b-937-93f": "hi-IN-SwaraNeural|-10%|ऋषि",

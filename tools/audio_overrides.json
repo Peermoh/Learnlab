@@ -17,5 +17,9 @@
   "दुःख": {
     "voice": "elevenlabs:OtEfb2LVzIE45wdYe54M",
     "_why": "Microsoft voice misheard by all judges; ElevenLabs Zara passed"
+  },
+  "ईद": {
+    "voice": "elevenlabs:OtEfb2LVzIE45wdYe54M",
+    "_why": "Microsoft voice shortened the long ई in ईख/ईंट; Zara's ईद passed both judges"
   }
 }
