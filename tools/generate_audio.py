@@ -166,7 +166,8 @@ async def preview(text, voice, proxy):
 
 async def generate(voice: str | None, force: bool, only: set, proxy: str | None):
     OUT.mkdir(parents=True, exist_ok=True)
-    clips = clips_from_data(DATA.read_text(encoding="utf-8"), load_overrides())
+    overrides = load_overrides()
+    clips = clips_from_data(DATA.read_text(encoding="utf-8"), overrides)
     manifest_path = OUT / "manifest.json"
     old = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     voice = resolve_voice(voice or old.get("voice") or DEFAULT_VOICE)  # keep the current voice unless asked to change
@@ -175,7 +176,10 @@ async def generate(voice: str | None, force: bool, only: set, proxy: str | None)
     made = skipped = 0
     for key, shown, spoken, rate in clips:
         path = OUT / f"{key}.mp3"
-        sig = f"{voice}|{rate}|{spoken}"  # if any of these change, the clip is regenerated
+        # a word can use its own voice via "voice" in audio_overrides.json (e.g. one that says it more clearly)
+        own = overrides.get(unicodedata.normalize("NFC", shown), {}).get("voice")
+        clip_voice = resolve_voice(own) if own else voice
+        sig = f"{clip_voice}|{rate}|{spoken}"  # if any of these change, the clip is regenerated
         sigs[key] = sig
         if only:
             wanted = unicodedata.normalize("NFC", shown) in only
@@ -184,11 +188,17 @@ async def generate(voice: str | None, force: bool, only: set, proxy: str | None)
         if not wanted:
             skipped += 1
             continue
-        await synth(spoken, voice, rate, path, proxy)
+        await synth(spoken, clip_voice, rate, path, proxy)
         made += 1
-        print(f"  {shown}  ({'slow' if key.endswith('.slow') else 'normal'}, {rate})")
+        print(f"  {shown}  ({'slow' if key.endswith('.slow') else 'normal'}, {rate}{', ' + clip_voice if own else ''})")
 
-    if made == 0 and old.get("files") == sorted(sigs):
+    # remove audio for letters/words no longer in the app
+    orphans = [p for p in OUT.glob("*.mp3") if p.stem not in sigs]
+    for p in orphans:
+        p.unlink()
+        print(f"  removed unused {p.name}")
+
+    if made == 0 and not orphans and old.get("files") == sorted(sigs):
         print(f"Nothing to do: all {len(clips)} clips are up to date.")
         return
     # version changes on every update so phones fetch the new files instead of cached ones

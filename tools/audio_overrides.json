@@ -1,5 +1,21 @@
 {
-  "_help": "Fix how a letter or word is spoken. Key = the letter/word as in data.js. 'rate' sets the Hear speed and 'slow_rate' the Slow speed (e.g. \"-40%\"); 'text' replaces what the voice is given to read (the app still shows the original). Find good values with: python tools/generate_audio.py --preview ई",
-  "ई": { "rate": "-35%" },
-  "ऊ": { "rate": "-35%" }
+  "_help": "Fix how a letter or word is spoken. Key = the letter/word as in data.js. 'rate' sets the Hear speed and 'slow_rate' the Slow speed (e.g. \"-40%\"); 'text' replaces what the voice is given to read (the app still shows the original). Find good values with: python tools/generate_audio.py --preview ई. 'voice' gives one item its own voice, e.g. \"elevenlabs:<voice_id>\" (generated where the ElevenLabs key is available).",
+  "ई": {
+    "rate": "-35%"
+  },
+  "ऊ": {
+    "rate": "-35%"
+  },
+  "ढोल": {
+    "voice": "elevenlabs:OtEfb2LVzIE45wdYe54M",
+    "_why": "Microsoft voice misheard by all judges; ElevenLabs Zara passed"
+  },
+  "त्रिशूल": {
+    "voice": "elevenlabs:OtEfb2LVzIE45wdYe54M",
+    "_why": "Microsoft voice misheard by all judges; ElevenLabs Zara passed"
+  },
+  "दुःख": {
+    "voice": "elevenlabs:OtEfb2LVzIE45wdYe54M",
+    "_why": "Microsoft voice misheard by all judges; ElevenLabs Zara passed"
+  }
 }
